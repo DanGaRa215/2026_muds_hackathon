@@ -9,18 +9,20 @@ struct DiagnosisInputView: View {
             // MARK: - 写真選択（任意）
             Section("写真（任意）") {
                 PhotosPicker(selection: $vm.selectedPhoto, matching: .images) {
-                    if let image = vm.selectedImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 200)
-                            .cornerRadius(8)
-                    } else {
-                        Label("写真を選択", systemImage: "photo")
+                    Label("写真を選択", systemImage: "photo")
+                }
+                .onChange(of: vm.selectedPhoto) { _, _ in
+                    Task {
+                        await vm.loadImage()
                     }
                 }
-                .onChange(of: vm.selectedPhoto) {
-                    Task { await vm.loadImage() }
+
+                if let image = vm.selectedImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 200)
+                        .cornerRadius(8)
                 }
             }
 

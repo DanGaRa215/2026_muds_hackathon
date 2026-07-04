@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class EvacuationViewModel: ObservableObject {
@@ -20,7 +21,7 @@ final class EvacuationViewModel: ObservableObject {
     @Published var selectedRoute: RouteInfo?
 
     private let scorer = ShelterScorer()
-    private let routeProvider: RouteProvider = StraightLineRouteProvider()
+    private let routeProvider: RouteProvider = AStarRouteProvider()
 
     // MARK: - EEWデモ起動
 

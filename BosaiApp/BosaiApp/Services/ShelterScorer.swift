@@ -12,7 +12,7 @@ struct SituationCheck {
 final class ShelterScorer {
     private let routeProvider: RouteProvider
 
-    init(routeProvider: RouteProvider = StraightLineRouteProvider()) {
+    init(routeProvider: RouteProvider = AStarRouteProvider()) {
         self.routeProvider = routeProvider
     }
 
