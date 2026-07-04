@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// 避難フロー全体を管理するコンテナビュー
 struct EvacuationFlowView: View {
