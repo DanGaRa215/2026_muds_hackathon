@@ -43,7 +43,7 @@ class _EewScreenState extends State<EewScreen> {
   void _goNext() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const StatusCheckScreen()),
+      MaterialPageRoute(builder: (_) => const SituationCheckPage()),
     );
   }
 

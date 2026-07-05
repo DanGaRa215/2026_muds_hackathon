@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../db/database_helper.dart';
 import '../logic/shelter_recommender.dart';
 import '../models/shelter.dart';
 
@@ -8,121 +7,130 @@ import '../models/shelter.dart';
 const _demoLat = 35.7434;
 const _demoLon = 139.8472;
 
-/// 避難所カード画面（設計書 §3: 1件表示 → YES/NO → 最大5件ループ）
-class ShelterCardScreen extends StatefulWidget {
+class ShelterProposalPage extends StatefulWidget {
+  const ShelterProposalPage({super.key, required this.situation});
+
   final Set<String> situation;
-  const ShelterCardScreen({super.key, required this.situation});
 
   @override
-  State<ShelterCardScreen> createState() => _ShelterCardScreenState();
+  State<ShelterProposalPage> createState() => _ShelterProposalPageState();
 }
 
-class _ShelterCardScreenState extends State<ShelterCardScreen> {
-  List<Shelter>? _candidates;
-  int _index = 0;
+class ShelterCardScreen extends ShelterProposalPage {
+  const ShelterCardScreen({super.key, required super.situation});
+}
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final shelters = await DatabaseHelper.instance.getShelters();
-    // ※推薦ロジックはダミー。メンバーBのスコア関数に差し替え予定。
-    final recommended = ShelterRecommender.recommend(
-      shelters: shelters,
-      situation: widget.situation,
-      currentLat: _demoLat,
-      currentLon: _demoLon,
-    );
-    setState(() => _candidates = recommended);
-  }
-
-  void _no() {
-    if (_index + 1 >= _candidates!.length) {
-      // 全候補NO → 最終指示（設計書のエッジケース）
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const FinalInstructionScreen()),
-      );
-    } else {
-      setState(() => _index++);
-    }
-  }
+class _ShelterProposalPageState extends State<ShelterProposalPage> {
+  static const Color _backgroundColor = Color(0xFFE7FBF0);
+  static const Color _textColor = Color(0xFF300808);
 
   @override
   Widget build(BuildContext context) {
-    final candidates = _candidates;
-    if (candidates == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    final shelter = candidates[_index];
-    final distance = ShelterRecommender.distanceM(
-        _demoLat, _demoLon, shelter.lat, shelter.lon);
-
     return Scaffold(
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        title: Text('避難所候補 ${_index + 1}/${candidates.length}'),
+        backgroundColor: _backgroundColor,
+        foregroundColor: _textColor,
+        title: const Text('おすすめの避難所'),
         automaticallyImplyLeading: false,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: _textColor, width: 2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '第1候補：市川市立○○小学校（推奨度：高）',
+                        style: TextStyle(
+                          color: _textColor,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
+                      ),
+                      SizedBox(height: 20),
+                      Text(
+                        '現在地から 420m（徒歩約5分）',
+                        style: TextStyle(
+                          color: _textColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        '海抜: 12m',
+                        style: TextStyle(
+                          color: _textColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
                   children: [
-                    Text(shelter.name,
-                        style: const TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    _InfoRow(
-                        icon: Icons.directions_walk,
-                        text:
-                            '約${(distance / 1000).toStringAsFixed(1)}km・徒歩${ShelterRecommender.walkMinutes(distance)}分'),
-                    _InfoRow(
-                        icon: Icons.terrain,
-                        text: '海抜 ${shelter.elevationM.toStringAsFixed(0)}m'),
-                    _InfoRow(
-                        icon: Icons.waves,
-                        text:
-                            '海岸から ${(shelter.coastDistanceM / 1000).toStringAsFixed(1)}km'),
-                    _InfoRow(
-                        icon: Icons.groups, text: '定員 約${shelter.capacity}人'),
+                    Expanded(
+                      child: SizedBox(
+                        height: 64,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _textColor,
+                            side: const BorderSide(color: _textColor, width: 2),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onPressed: () {},
+                          child: const Text('NO（他の候補を見る）'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 64,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _textColor,
+                            foregroundColor: _backgroundColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onPressed: () {},
+                          child: const Text('YES（ここへ避難する）'),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
+              ],
             ),
-            const Spacer(),
-            const Text('この避難所へ向かいますか？',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
-                minimumSize: const Size.fromHeight(64),
-              ),
-              onPressed: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => NaviScreen(shelter: shelter)),
-              ),
-              child: const Text('YES（ここへ避難する）',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(56),
-              ),
-              onPressed: _no,
-              child: const Text('NO（次の候補を見る）',
-                  style: TextStyle(fontSize: 18)),
-            ),
-          ],
+          ),
         ),
       ),
     );

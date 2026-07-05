@@ -2,76 +2,144 @@ import 'package:flutter/material.dart';
 
 import 'shelter_card_screen.dart';
 
-/// 状況確認画面（設計書 §3: チェックボックス×4のみ・1画面完結）
-class StatusCheckScreen extends StatefulWidget {
-  const StatusCheckScreen({super.key});
+class SituationCheckPage extends StatefulWidget {
+  const SituationCheckPage({super.key});
 
   @override
-  State<StatusCheckScreen> createState() => _StatusCheckScreenState();
+  State<SituationCheckPage> createState() => _SituationCheckPageState();
 }
 
-class _StatusCheckScreenState extends State<StatusCheckScreen> {
-  // key: injury / fire / collapse / tsunami
-  final Map<String, bool> _checks = {
-    'injury': false,
-    'fire': false,
-    'collapse': false,
-    'tsunami': false,
-  };
+class StatusCheckScreen extends SituationCheckPage {
+  const StatusCheckScreen({super.key});
+}
 
-  static const _labels = {
-    'injury': 'けがをしている',
-    'fire': '周囲で火災が発生している',
-    'collapse': '建物倒壊の危険がある',
-    'tsunami': '津波の危険がある（沿岸部）',
-  };
+class _SituationOption {
+  const _SituationOption(this.key, this.label);
+
+  final String key;
+  final String label;
+}
+
+class _SituationCheckPageState extends State<SituationCheckPage> {
+  static const Color _backgroundColor = Color(0xFFE7FBF0);
+  static const Color _textColor = Color(0xFF300808);
+  static const Color _buttonColor = Color(0xFF300808);
+
+  static const List<_SituationOption> _options = [
+    _SituationOption('injury', 'けが人がいる'),
+    _SituationOption('fire', '火災が発生している'),
+    _SituationOption('collapse', '建物が倒壊している'),
+    _SituationOption('tsunami', '津波のリスクがある（沿岸部）'),
+  ];
+
+  final List<bool> _selected = List<bool>.filled(_options.length, false);
+
+  Set<String> _selectedSituation() {
+    return {
+      for (var index = 0; index < _options.length; index++)
+        if (_selected[index]) _options[index].key,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        title: const Text('状況確認'),
+        backgroundColor: _backgroundColor,
+        foregroundColor: _textColor,
+        title: const Text('周囲の状況確認'),
         automaticallyImplyLeading: false,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'あてはまるものをチェックしてください',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            ..._checks.keys.map(
-              (key) => CheckboxListTile(
-                value: _checks[key],
-                title: Text(_labels[key]!,
-                    style: const TextStyle(fontSize: 18)),
-                controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (v) => setState(() => _checks[key] = v ?? false),
-              ),
-            ),
-            const Spacer(),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(64),
-              ),
-              onPressed: () {
-                final situation = _checks.entries
-                    .where((e) => e.value)
-                    .map((e) => e.key)
-                    .toSet();
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => ShelterCardScreen(situation: situation),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 20),
+                child: Text(
+                  '現在の周囲の状況をチェックしてください（複数選択可）',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _textColor,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    height: 1.3,
                   ),
-                );
-              },
-              child: const Text('確認して避難所を探す',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: _options.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final option = _options[index];
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: _textColor, width: 2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: CheckboxListTile(
+                        value: _selected[index],
+                        activeColor: _buttonColor,
+                        checkColor: _backgroundColor,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        title: Text(
+                          option.label,
+                          style: const TextStyle(
+                            color: _textColor,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _selected[index] = value ?? false;
+                          });
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: SizedBox(
+          height: 64,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _buttonColor,
+              foregroundColor: _backgroundColor,
+              textStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
-          ],
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ShelterProposalPage(
+                    situation: _selectedSituation(),
+                  ),
+                ),
+              );
+            },
+            child: const Text('避難所を検索する'),
+          ),
         ),
       ),
     );
