@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'eew_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -156,7 +158,13 @@ class _DailyDashboardPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const EewScreen(),
+                        ),
+                      );
+                    },
                     child: const Text('緊急地震速報（EEW）を擬似発火'),
                   ),
                 ),
