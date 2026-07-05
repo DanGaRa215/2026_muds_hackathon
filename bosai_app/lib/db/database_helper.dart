@@ -52,6 +52,8 @@ class DatabaseHelper {
             floor INTEGER NOT NULL
           )
         ''');
+      },
+      onOpen: (db) async {
         await _seedShelters(db);
       },
     );
@@ -103,6 +105,7 @@ class DatabaseHelper {
       ),
     ];
     
+    await db.delete('shelters');
     final batch = db.batch();
     for (final s in shelters) {
       batch.insert('shelters', s.toMap());
