@@ -57,46 +57,52 @@ class DatabaseHelper {
     );
   }
 
-  /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
-  /// 座標・海抜・海岸距離はすべて仮の値。
+  /// 江戸川区デモ用避難所データ（メンバーD作成）
+  /// 津波リスクや高台避難のロジック検証に特化した5件
   Future<void> _seedShelters(Database db) async {
     const shelters = [
       Shelter(
-        shelterId: 'demo-0001',
-        name: '第一小学校（ダミー）',
-        lat: 35.750, lon: 139.848,
-        elevationM: 3, coastDistanceM: 9000,
+        shelterId: '13113-0001',
+        name: '葛西臨海公園（広域避難場所）',
+        lat: 35.6420, lon: 139.8620,
+        elevationM: 3.0, coastDistanceM: 546.0,
+        // 海に近いため津波フラグなし（ロジックで除外される想定）
+        types: 'earthquake,fire', capacity: 10000,
+      ),
+      Shelter(
+        shelterId: '13113-0002',
+        name: '江戸川区立葛西第三中学校',
+        lat: 35.6600, lon: 139.8700,
+        elevationM: -1.0, coastDistanceM: 2663.0,
+        // 海抜ゼロメートル地帯。津波時のスコアが低くなる想定
         types: 'earthquake,fire', capacity: 800,
       ),
       Shelter(
-        shelterId: 'demo-0002',
-        name: '中央中学校（ダミー）',
-        lat: 35.744, lon: 139.855,
-        elevationM: 8, coastDistanceM: 10500,
-        types: 'earthquake,tsunami', capacity: 1200,
+        shelterId: '13113-0003',
+        name: '江戸川区役所',
+        lat: 35.7067, lon: 139.8672,
+        elevationM: -1.5, coastDistanceM: 7724.0,
+        // 内陸寄りだが海抜は低い
+        types: 'earthquake,fire', capacity: 1200,
       ),
       Shelter(
-        shelterId: 'demo-0003',
-        name: '緑地公園・広域避難場所（ダミー）',
-        lat: 35.756, lon: 139.840,
-        elevationM: 4, coastDistanceM: 9500,
-        types: 'earthquake,fire', capacity: 5000,
+        shelterId: '13113-0004',
+        name: 'タワーホール船堀（津波避難ビル）',
+        lat: 35.6839, lon: 139.8643,
+        elevationM: 15.0, coastDistanceM: 5174.0,
+        // 垂直避難の正解ルート（本命）
+        types: 'earthquake,tsunami,fire', capacity: 3000,
       ),
       Shelter(
-        shelterId: 'demo-0004',
-        name: '東高校（ダミー）',
-        lat: 35.738, lon: 139.842,
-        elevationM: 12, coastDistanceM: 11000,
+        shelterId: '12203-0001',
+        name: '市川市立国府台小学校（推奨・高台避難所）',
+        lat: 35.7420, lon: 139.9000,
+        elevationM: 22.0, coastDistanceM: 12180.0,
+        // 区外の台地。「最寄りの高台へ」の切り札
         types: 'earthquake,tsunami,fire', capacity: 1500,
       ),
-      Shelter(
-        shelterId: 'demo-0005',
-        name: '区民センター（ダミー）',
-        lat: 35.747, lon: 139.836,
-        elevationM: 3, coastDistanceM: 9200,
-        types: 'earthquake', capacity: 400,
-      ),
     ];
+    
     final batch = db.batch();
     for (final s in shelters) {
       batch.insert('shelters', s.toMap());
