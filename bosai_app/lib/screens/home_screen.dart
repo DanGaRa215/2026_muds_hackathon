@@ -4,6 +4,7 @@ import 'diagnosis_screen.dart';
 import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'prepare_screen.dart';
+import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
 /// ホーム画面: 4ボタンのみ（設計書 §3【平常時】）
 class HomeScreen extends StatelessWidget {
@@ -35,6 +36,15 @@ class HomeScreen extends StatelessWidget {
               label: '診断履歴',
               subtitle: '過去の家具診断を確認',
               onTap: () => _push(context, const HistoryScreen()),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AddressGeocodingScreen()),
+                );
+              },
+              child: const Text('自宅の住所を登録する'),
             ),
             const Spacer(),
             // 本番では気象庁API(WebSocket)受信 → flutter_local_notifications
