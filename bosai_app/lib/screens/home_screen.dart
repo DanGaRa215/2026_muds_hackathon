@@ -1,50 +1,143 @@
 import 'package:flutter/material.dart';
 
-import 'diagnosis_screen.dart';
 import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'prepare_screen.dart';
-import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
-/// ホーム画面: 4ボタンのみ（設計書 §3【平常時】）
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  static const Color _backgroundColor = Color(0xFFE7FBF0);
+  static const Color _textColor = Color(0xFF300808);
+
+  int _currentIndex = 0;
+
+  final List<Widget> _pages = const [
+    _DailyDashboardPage(),
+    _PlaceholderTabPage(
+      title: '家具診断履歴',
+      icon: Icons.history,
+      description: '過去の診断結果をここに表示します。',
+    ),
+    _PlaceholderTabPage(
+      title: '避難準備',
+      icon: Icons.map_outlined,
+      description: '避難計画や地図ダウンロード画面をここに接続します。',
+    ),
+    _PlaceholderTabPage(
+      title: 'アプリ設定',
+      icon: Icons.settings,
+      description: '通知や表示設定をここで管理します。',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('総合防災アプリ')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _MenuButton(
-              icon: Icons.camera_alt,
-              label: '家具診断',
-              subtitle: '写真から転倒リスクをAI判定',
-              onTap: () => _push(context, const DiagnosisScreen()),
+      backgroundColor: _backgroundColor,
+      body: SafeArea(
+        child: IndexedStack(
+          index: _currentIndex,
+          children: _pages,
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: _textColor,
+        unselectedItemColor: _textColor.withValues(alpha: 0.7),
+        backgroundColor: Colors.white,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'ホーム',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history_outlined),
+            activeIcon: Icon(Icons.history),
+            label: '家具診断履歴',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.map_outlined),
+            activeIcon: Icon(Icons.map),
+            label: '避難準備',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_outlined),
+            activeIcon: Icon(Icons.settings),
+            label: 'アプリ設定',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyDashboardPage extends StatelessWidget {
+  const _DailyDashboardPage();
+
+  static const Color _textColor = Color(0xFF300808);
+  static const Color _warningBorderColor = Color(0xFFC62828);
+  static const Color _warningBackgroundColor = Color(0xFFFDECEC);
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '日常の防災メニュー',
+            style: TextStyle(
+              color: _textColor,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
             ),
-            _MenuButton(
-              icon: Icons.map,
-              label: '避難準備',
-              subtitle: '自宅情報の登録・避難所リスト確認',
-              onTap: () => _push(context, const PrepareScreen()),
+          ),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.98,
+            children: const [
+              _DailyMenuCardButton(
+                icon: Icons.camera_alt,
+                label: 'AI家具安全診断',
+              ),
+              _DailyMenuCardButton(
+                icon: Icons.map,
+                label: '避難準備（マップDL）',
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _warningBackgroundColor,
+              border: Border.all(color: _warningBorderColor, width: 2),
+              borderRadius: BorderRadius.circular(16),
             ),
             _MenuButton(
               icon: Icons.history,
               label: '診断履歴',
               subtitle: '過去の家具診断を確認',
               onTap: () => _push(context, const HistoryScreen()),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AddressGeocodingScreen()),
-                );
-              },
-              child: const Text('自宅の住所を登録する'),
             ),
             const Spacer(),
             // 本番では気象庁API(WebSocket)受信 → flutter_local_notifications
@@ -66,52 +159,91 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
-  void _push(BuildContext context, Widget screen) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-  }
 }
 
-class _MenuButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color? color;
-  final VoidCallback onTap;
-
-  const _MenuButton({
+class _DailyMenuCardButton extends StatelessWidget {
+  const _DailyMenuCardButton({
     required this.icon,
     required this.label,
-    required this.subtitle,
-    required this.onTap,
-    this.color,
   });
+
+  static const Color _textColor = Color(0xFF300808);
+
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: FilledButton(
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          minimumSize: const Size.fromHeight(72), // 非常時UI原則: 大きなタップ領域
-          alignment: Alignment.centerLeft,
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: _textColor,
+        elevation: 0,
+        padding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: _textColor, width: 2),
         ),
-        onPressed: onTap,
-        child: Row(
+      ),
+      onPressed: () {},
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 44),
+          const SizedBox(height: 14),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceholderTabPage extends StatelessWidget {
+  const _PlaceholderTabPage({
+    required this.title,
+    required this.icon,
+    required this.description,
+  });
+
+  static const Color _textColor = Color(0xFF300808);
+
+  final String title;
+  final IconData icon;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 32),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text(subtitle, style: const TextStyle(fontSize: 12)),
-                ],
+            Icon(icon, size: 56, color: _textColor),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                color: _textColor,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _textColor,
+                fontSize: 16,
               ),
             ),
           ],
