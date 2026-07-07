@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'eew_screen.dart';
 import 'history_screen.dart';
+import 'map_spike_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -172,6 +173,15 @@ class _DailyDashboardPage extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          // --- SPIKE: 検証後に削除 ---
+          _MenuButton(
+            icon: Icons.map,
+            label: 'Map Spike (Dev)',
+            subtitle: 'PMTilesオフライン地図テスト',
+            onTap: () => _push(context, const MapSpikeScreen()),
+          ),
+          // --- END SPIKE ---
           ],
         ),
       );
