@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'eew_screen.dart';
 import 'history_screen.dart';
-import 'prepare_screen.dart';
+import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -133,31 +133,48 @@ class _DailyDashboardPage extends StatelessWidget {
               border: Border.all(color: _warningBorderColor, width: 2),
               borderRadius: BorderRadius.circular(16),
             ),
-            _MenuButton(
-              icon: Icons.history,
-              label: '診断履歴',
-              subtitle: '過去の家具診断を確認',
-              onTap: () => _push(context, const HistoryScreen()),
-            ),
-            const Spacer(),
-            // 本番では気象庁API(WebSocket)受信 → flutter_local_notifications
-            // の通知タップでEEW画面を起動する。デモでは直接起動。
-            _MenuButton(
-              icon: Icons.warning_amber,
-              label: 'EEWデモ起動',
-              subtitle: '発生時フローのシミュレーション',
-              color: Colors.red.shade700,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  fullscreenDialog: true,
-                  builder: (_) => const EewScreen(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _MenuButton(
+                  icon: Icons.history,
+                  label: '診断履歴',
+                  subtitle: '過去の家具診断を確認',
+                  onTap: () => _push(context, const HistoryScreen()),
                 ),
-              ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AddressGeocodingScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('自宅の住所を登録する'),
+                ),
+                const SizedBox(height: 12),
+                // 本番では気象庁API(WebSocket)受信 → flutter_local_notifications
+                // の通知タップでEEW画面を起動する。デモでは直接起動。
+                _MenuButton(
+                  icon: Icons.warning_amber,
+                  label: 'EEWデモ起動',
+                  subtitle: '発生時フローのシミュレーション',
+                  color: Colors.red.shade700,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => const EewScreen(),
+                    ),
+                  ),
+                ),
+              ],
             ),
+          ),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -206,6 +223,74 @@ class _DailyMenuCardButton extends StatelessWidget {
   }
 }
 
+class _MenuButton extends StatelessWidget {
+  const _MenuButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+    this.color = const Color(0xFF300808),
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _push(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => page),
+  );
+}
+
 class _PlaceholderTabPage extends StatelessWidget {
   const _PlaceholderTabPage({
     required this.title,
@@ -249,6 +334,6 @@ class _PlaceholderTabPage extends StatelessWidget {
           ],
         ),
       ),
-    );
+      );
   }
 }
