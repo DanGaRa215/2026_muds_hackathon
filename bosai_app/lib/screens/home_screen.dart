@@ -89,102 +89,115 @@ class _DailyDashboardPage extends StatelessWidget {
   const _DailyDashboardPage();
 
   static const Color _textColor = Color(0xFF300808);
-  static const Color _warningBorderColor = Color(0xFFC62828);
-  static const Color _warningBackgroundColor = Color(0xFFFDECEC);
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            '日常の防災メニュー',
-            style: TextStyle(
-              color: _textColor,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.98,
-            children: const [
-              _DailyMenuCardButton(
-                icon: Icons.camera_alt,
-                label: 'AI家具安全診断',
-              ),
-              _DailyMenuCardButton(
-                icon: Icons.map,
-                label: '避難準備（マップDL）',
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // スクロール可能なメインコンテンツ領域
+        Expanded(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _warningBackgroundColor,
-              border: Border.all(color: _warningBorderColor, width: 2),
-              borderRadius: BorderRadius.circular(16),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _MenuButton(
-                  icon: Icons.history,
-                  label: '診断履歴',
-                  subtitle: '過去の家具診断を確認',
-                  onTap: () => _push(context, const HistoryScreen()),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AddressGeocodingScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text('自宅の住所を登録する'),
-                ),
-                const SizedBox(height: 12),
-                // 本番では気象庁API(WebSocket)受信 → flutter_local_notifications
-                // の通知タップでEEW画面を起動する。デモでは直接起動。
-                _MenuButton(
-                  icon: Icons.warning_amber,
-                  label: 'EEWデモ起動',
-                  subtitle: '発生時フローのシミュレーション',
-                  color: Colors.red.shade700,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      fullscreenDialog: true,
-                      builder: (_) => const EewScreen(),
-                    ),
+                const Text(
+                  '日常の防災メニュー',
+                  style: TextStyle(
+                    color: _textColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 12),
+                
+                // 🎯 4つのボタンを同じサイズで2×2のグリッドに統一配置
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.98,
+                  children: [
+                    _DailyMenuCardButton(
+                      icon: Icons.camera_alt,
+                      label: 'AI家具安全診断',
+                      onTap: () {},
+                    ),
+                    _DailyMenuCardButton(
+                      icon: Icons.map,
+                      label: '避難準備（マップDL）',
+                      onTap: () {},
+                    ),
+                    _DailyMenuCardButton(
+                      icon: Icons.history,
+                      label: '家具の診断履歴',
+                      onTap: () => _push(context, const HistoryScreen()),
+                    ),
+                    _DailyMenuCardButton(
+                      icon: Icons.home_work,
+                      label: '自宅の住所登録',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AddressGeocodingScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // --- SPIKE: 検ッセージ後に削除 ---
+                _MenuButton(
+                  icon: Icons.map,
+                  label: 'Map Spike (Dev)',
+                  subtitle: 'PMTilesオフライン地図テスト',
+                  onTap: () => _push(context, const MapSpikeScreen()),
+                ),
+                // --- END SPIKE ---
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          // --- SPIKE: 検証後に削除 ---
-          _MenuButton(
-            icon: Icons.map,
-            label: 'Map Spike (Dev)',
-            subtitle: 'PMTilesオフライン地図テスト',
-            onTap: () => _push(context, const MapSpikeScreen()),
-          ),
-          // --- END SPIKE ---
-          ],
         ),
-      );
+        
+        // 🎯 フッター（ボトムナビ）の上に設置したデモボタンエリア
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: _textColor.withValues(alpha: 0.1), width: 1),
+            ),
+          ),
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade800,
+              side: BorderSide(color: Colors.red.shade800, width: 1.5),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.warning_amber_rounded),
+            label: const Text(
+              '審査用：EEWデモを起動する',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => const EewScreen(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -192,12 +205,14 @@ class _DailyMenuCardButton extends StatelessWidget {
   const _DailyMenuCardButton({
     required this.icon,
     required this.label,
+    required this.onTap,
   });
 
   static const Color _textColor = Color(0xFF300808);
 
   final IconData icon;
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +227,7 @@ class _DailyMenuCardButton extends StatelessWidget {
           side: const BorderSide(color: _textColor, width: 2),
         ),
       ),
-      onPressed: () {},
+      onPressed: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -222,7 +237,7 @@ class _DailyMenuCardButton extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               color: _textColor,
             ),
@@ -344,6 +359,6 @@ class _PlaceholderTabPage extends StatelessWidget {
           ],
         ),
       ),
-      );
+    );
   }
 }
