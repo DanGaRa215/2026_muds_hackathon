@@ -184,7 +184,7 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
 
     return FlutterMap(
       options: MapOptions(
-        initialCenter: _currentPosition ?? _defaultCenter,
+        initialCenter: _defaultCenter,
         initialZoom: _defaultZoom,
         minZoom: 10,
         maxZoom: 16,
