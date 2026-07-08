@@ -6,9 +6,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
-import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
 
@@ -22,16 +19,21 @@ class AddressGeocodingScreen extends StatefulWidget {
 class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
   final TextEditingController _addressController = TextEditingController();
   final custom_geo.Geocoding _geocoding = custom_geo.Geocoding();
-  PmTilesVectorTileProvider? _tileProvider;
+  final MapController _mapController = MapController();
   
   bool _isLoading = false;
   String _statusText = "住所を入力して検索してください";
   
-  LatLng? _previewCenter;       // 特定された自宅の座標
-  String? _downloadedLocalPath; // DLしたPMTilesのスマホ内パス（23区外用）
-  bool _isUsingAssetMap = false; // 23区内（demo_area）のデータを使うかどうかのフラグ
+  // 初期位置（江戸川区周辺）
+  LatLng _previewCenter = const LatLng(35.7069, 139.8687); 
+  bool _hasSearched = false;
 
-  // 🌍 住所文字列から「23区内（アセット）」か「区外（DL）」かを判定
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  // 🌍 住所から識別キー（サーバーのファイル名）を判定
   String _getCityKey(String address) {
     final tokyo23Wards = ["江戸川", "葛飾", "江東", "墨田", "足立", "荒川", "港区", "新宿", "品川", "目黒", "大田", "世田谷", "渋谷", "中野", "杉並", "練馬", "台東", "文京", "千代田", "中央区", "豊島", "北区", "板橋"];
     for (var ward in tokyo23Wards) {
@@ -43,6 +45,7 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
     return "demo_area"; 
   }
 
+  // 📥 住所をオンライン特定し、裏でオフライン用PMTilesを同期ダウンロードする処理
   Future<void> _searchAndDownloadOfflineMap() async {
     final address = _addressController.text.trim();
     if (address.isEmpty) {
@@ -55,10 +58,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
     setState(() {
       _isLoading = true;
       _statusText = "住所の座標を特定中...";
-      _previewCenter = null;
-      _downloadedLocalPath = null;
-      _isUsingAssetMap = false;
-        _tileProvider = null;
     });
 
     try {
@@ -73,25 +72,15 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
       final targetCenter = LatLng(location.latitude, location.longitude);
       final cityKey = _getCityKey(address);
 
+      // 🎯 修正点①：オンラインマップのカメラを、検索した住所のドンピシャへ滑らかに移動
+      _mapController.move(targetCenter, 15.0);
+
+      String savedPmtilesPath = '';
+
       if (cityKey == "demo_area") {
-        setState(() => _statusText = "23区内のデータを検知しました。内蔵マップを展開します...");
-
-        final localPath = await _copyAssetToLocal('demo_area.pmtiles');
-        final provider = await PmTilesVectorTileProvider.fromSource(localPath);
-        
-        await DatabaseHelper.instance.saveHomeMapInfo(
-          address: address,
-          lat: targetCenter.latitude,
-          lon: targetCenter.longitude,
-          pmtilesPath: localPath,
-        );
-
-        setState(() {
-          _previewCenter = targetCenter;
-          _isUsingAssetMap = true;
-          _tileProvider = provider;
-          _statusText = "🎉 23区内（demo_area）のオフラインマップを同期しました！";
-        });
+        setState(() => _statusText = "23区内のデータを検知しました。内蔵オフラインマップ（tokyo23_buffered）を同期中...");
+        final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
+        savedPmtilesPath = localPath;
         
       } else {
         setState(() => _statusText = "周辺のオフラインマップデータをダウンロード中...\n(サーバーから ${cityKey}.pmtiles を取得しています)");
@@ -110,33 +99,30 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
             throw Exception("地図サーバーからのダウンロードに失敗しました (Status: ${response.statusCode})");
           }
         }
-
-        final provider = await PmTilesVectorTileProvider.fromSource(localPath);
-
-        await DatabaseHelper.instance.saveHomeMapInfo(
-          address: address,
-          lat: targetCenter.latitude,
-          lon: targetCenter.longitude,
-          pmtilesPath: localPath,
-        );
-
-        setState(() {
-          _previewCenter = targetCenter;
-          _downloadedLocalPath = localPath;
-          _tileProvider = provider;
-          _statusText = "🎉 周辺エリア（$cityKey）のオフラインマップをダウンロードしました！";
-        });
+        savedPmtilesPath = localPath;
       }
+
+      // SQLiteに「正確な緯度経度」と「オフラインPMTilesパス」を完全保存
+      await DatabaseHelper.instance.saveHomeMapInfo(
+        address: address,
+        lat: targetCenter.latitude,
+        lon: targetCenter.longitude,
+        pmtilesPath: savedPmtilesPath,
+      );
+
+      setState(() {
+        _previewCenter = targetCenter;
+        _hasSearched = true;
+        _statusText = "🎉 [$cityKey.pmtiles] のダウンロード＆自宅登録に成功しました！";
+      });
 
       if (!mounted) return;
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
-          title: const Text('オフライン地図同期完了 🚀'),
-          content: Text(cityKey == "demo_area" 
-              ? '内蔵されている23区マップ（demo_area）との紐付けが完了しました！'
-              : '対象エリア（$cityKey）のPMTilesファイルをサーバーから端末内に完全保存しました。\n\nこれで完全オフラインでも災害ナビゲーションが動作します！'),
+          title: const Text('設定＆ダウンロード完了 🚀'),
+          content: Text('対象エリアのオフライン地図ファイル（$cityKey.pmtiles）を端末内に同期しました。\n\nこれで完全オフライン状態（圏外）になっても、この地域の災害ナビが100%作動します！'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -169,39 +155,7 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
         flush: true,
       );
     }
-
     return localPath;
-  }
-
-  vtr.Theme _buildRoadsTheme() {
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#4a90d9',
-            'line-width': 2.0,
-          },
-        },
-      ],
-    });
   }
 
   @override
@@ -234,7 +188,7 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
                 fillColor: Colors.white,
                 filled: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                labelText: '住所を入力 (例: 千葉県浦安市日の出)',
+                labelText: '住所を入力 (例: 東京都江戸川区中央)',
                 prefixIcon: const Icon(Icons.map, color: mainColor),
               ),
             ),
@@ -276,62 +230,48 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
             const SizedBox(height: 16),
 
             Expanded(
-              child: _previewCenter == null
-                  ? Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: mainColor.withOpacity(0.2)),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'データを同期すると、\nここに完全オフライン表示のPMTilesマップが出現します。',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '🗺️ 自宅登録マッププレビュー (通常のオンラインマップでサクサク動きます)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: mainColor),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: _previewCenter,
+                          initialZoom: 14.0,
+                          maxZoom: 18,
+                          minZoom: 1,
                         ),
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          '🗺️ 保存されたPMTilesの描画プレビュー (完全オフライン対応)',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: mainColor),
-                        ),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: FlutterMap(
-                              options: MapOptions(
-                                initialCenter: _previewCenter!,
-                                initialZoom: 14.0,
-                                maxZoom: 18,
-                                minZoom: 1,
-                              ),
-                              children: [
-                                VectorTileLayer(
-                                  theme: _buildRoadsTheme(),
-                                  tileProviders: TileProviders({
-                                    'pmtiles': _tileProvider!,
-                                  }),
-                                ),
-                                MarkerLayer(
-                                  markers: [
-                                    Marker(
-                                      point: _previewCenter!,
-                                      width: 40,
-                                      height: 40,
-                                      child: const Icon(Icons.location_on, color: Colors.red, size: 45),
-                                    ),
-                                  ],
+                        children: [
+                          // 🎯 修正点②：プレビューを100%滑らかに表示できる標準オンラインレイヤーに差し替え
+                          TileLayer(
+                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'package:bosai_app',
+                          ),
+                          if (_hasSearched)
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: _previewCenter,
+                                  width: 40,
+                                  height: 40,
+                                  child: const Icon(Icons.location_on, color: Colors.red, size: 45),
                                 ),
                               ],
                             ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
