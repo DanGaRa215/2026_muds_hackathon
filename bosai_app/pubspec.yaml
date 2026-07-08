@@ -15,6 +15,7 @@ dependencies:
   # 家具診断の写真選択
   image_picker: ^1.1.0
   geocoding: ^5.0.0
+  http: ^1.2.2
   # オフライン地図表示（スパイク検証）
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
