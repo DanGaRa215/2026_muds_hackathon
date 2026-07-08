@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../db/database_helper.dart';
 import '../models/diagnosis.dart';
+import '../services/diagnosis_api_client.dart';
 
 enum _DemoMode {
   auto,
@@ -33,7 +35,8 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   Map<String, dynamic>? _payload;
   String? _statusMessage;
 
-  final String _shindo = 's6strong';
+  static const String _fixedShindo = 's6weak';
+
   String _structure = 'wood';
   int _floorNo = 3;
   bool _baseIsolated = false;
@@ -62,6 +65,8 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     }
   }
 
+  bool get _hasApiConfig => _apiBaseUrl.isNotEmpty && _appKey.isNotEmpty;
+
   Future<void> _runDiagnosis() async {
     setState(() {
       _isLoading = true;
@@ -69,8 +74,30 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       _payload = null;
     });
 
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    final payload = _buildPayload();
+    Map<String, dynamic> payload;
+
+    try {
+      if (_demoMode != _DemoMode.auto) {
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        payload = _buildPayload();
+      } else if (_hasApiConfig) {
+        payload = await _diagnoseWithApi();
+      } else {
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        payload = _buildPayload();
+      }
+    } on DiagnosisApiException catch (e) {
+      payload = {
+        'status': 'api_error',
+        'code': e.statusCode,
+        'message': e.message,
+      };
+    } catch (e) {
+      payload = {
+        'status': 'api_error',
+        'message': '通信に失敗しました。ネットワークを確認してもう一度お試しください。',
+      };
+    }
 
     if (mounted) {
       setState(() {
@@ -83,6 +110,45 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     if (payload['status'] == 'ok') {
       await _saveHistory(payload);
     }
+  }
+
+  Future<Map<String, dynamic>> _diagnoseWithApi() async {
+    if (_image == null) {
+      return _buildRetakePayload(
+        reason: 'no_furniture',
+        message: '家具全体が写るように撮影してください。',
+      );
+    }
+
+    final imageBytes = await _image!.readAsBytes();
+    final imageMeta = _imageMetaFor(_image!);
+    final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
+
+    return client.diagnose(
+      imageBytes: imageBytes,
+      structure: _structure,
+      floorNo: _floorNo,
+      baseIsolated: _baseIsolated,
+      filename: imageMeta.filename,
+      contentType: imageMeta.contentType,
+    );
+  }
+
+  ({String filename, MediaType contentType}) _imageMetaFor(XFile image) {
+    final path = image.path.toLowerCase();
+    final mimeType = image.mimeType?.toLowerCase();
+
+    if (path.endsWith('.png') || mimeType == 'image/png') {
+      return (
+        filename: 'diagnosis.png',
+        contentType: MediaType('image', 'png'),
+      );
+    }
+
+    return (
+      filename: 'diagnosis.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    );
   }
 
   Map<String, dynamic> _buildPayload() {
@@ -236,7 +302,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       Diagnosis(
         createdAt: DateTime.now().toIso8601String(),
         riskLevel: _historyRiskLabel(risk['level'] as String),
-        intensity: _shindoLabel(_shindo),
+        intensity: _shindoLabel(_fixedShindo),
         fixations: _structureLabel(_structure),
         comment: comment,
       ),
@@ -250,7 +316,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       case 'retake':
         return payload['message'] as String;
       case 'api_error':
-        return payload['message'] as String;
+        return (payload['message'] as String?) ?? 'もう一度お試しください。';
       default:
         return '結果を取得しました。';
     }
@@ -412,7 +478,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   }
 
   Widget _buildHeroCard() {
-    final usingDemo = _apiBaseUrl.isEmpty || _appKey.isEmpty;
+    final usingDemo = !_hasApiConfig;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -636,8 +702,9 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       );
     }
 
-    final results = (payload['results'] as List<dynamic>).cast<Map<String, dynamic>>();
-    final unknowns = (payload['unknowns'] as List<dynamic>).cast<String>();
+    final results =
+        (payload['results'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final unknowns = (payload['unknowns'] as List<dynamic>? ?? []).cast<String>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -741,7 +808,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       };
 
   Widget _buildEnvNote() {
-    final usingDemo = _apiBaseUrl.isEmpty || _appKey.isEmpty;
+    final usingDemo = !_hasApiConfig;
     return Text(
       usingDemo
           ? '開発時は --dart-define=API_BASE_URL=... --dart-define=APP_KEY=... で接続情報を注入できます。'
@@ -846,10 +913,12 @@ class _ResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final furniture = result['furniture'] as Map<String, dynamic>;
-    final braces = (result['braces'] as List<dynamic>).cast<Map<String, dynamic>>();
+    final braces =
+        (result['braces'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
     final risk = result['risk'] as Map<String, dynamic>;
-    final warnings = (result['warnings'] as List<dynamic>).cast<String>();
-    final suggestions = (result['suggestions'] as List<dynamic>).cast<Map<String, dynamic>>();
+    final warnings = (result['warnings'] as List<dynamic>? ?? []).cast<String>();
+    final suggestions =
+        (result['suggestions'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
     final referenceOnly = result['reference_only'] as bool? ?? false;
     final bbox = furniture['bbox'];
 
