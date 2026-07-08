@@ -116,22 +116,31 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     if (_image == null) {
       return _buildRetakePayload(
         reason: 'no_furniture',
-        message: '家具全体が写るように撮影してください。',
+        message: '先に画像を選んでから診断してください。',
       );
     }
 
-    final imageBytes = await _image!.readAsBytes();
-    final imageMeta = _imageMetaFor(_image!);
-    final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
+    try {
+      final imageBytes = await _image!.readAsBytes();
+      final imageMeta = _imageMetaFor(_image!);
+      final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
 
-    return client.diagnose(
-      imageBytes: imageBytes,
-      structure: _structure,
-      floorNo: _floorNo,
-      baseIsolated: _baseIsolated,
-      filename: imageMeta.filename,
-      contentType: imageMeta.contentType,
-    );
+      return client.diagnose(
+        imageBytes: imageBytes,
+        structure: _structure,
+        floorNo: _floorNo,
+        baseIsolated: _baseIsolated,
+        filename: imageMeta.filename,
+        contentType: imageMeta.contentType,
+      );
+    } on DiagnosisApiException {
+      rethrow;
+    } catch (e) {
+      throw DiagnosisApiException(
+        0,
+        '画像の読み込みまたは通信に失敗しました: $e',
+      );
+    }
   }
 
   ({String filename, MediaType contentType}) _imageMetaFor(XFile image) {
@@ -821,11 +830,49 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
 
   Widget _buildEnvNote() {
     final usingDemo = !_hasApiConfig;
-    return Text(
-      usingDemo
-          ? '開発時は --dart-define=API_BASE_URL=... --dart-define=APP_KEY=... で接続情報を注入できます。'
-          : '接続情報は dart-define から読み取っています。',
-      style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+    if (usingDemo) {
+      return Text(
+        '開発時は --dart-define=API_BASE_URL=... --dart-define=APP_KEY=... で接続情報を注入できます。',
+        style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+      );
+    }
+
+    final demoModeBlocksApi = _demoMode != _DemoMode.auto;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '接続先: $_apiBaseUrl / APP_KEY ${_appKey.length}文字',
+          style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '「API設定済み」は dart-define 読込OK の意味です。診断する を押すと API を呼び出します。',
+          style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+        ),
+        if (demoModeBlocksApi) ...[
+          const SizedBox(height: 8),
+          Text(
+            'デモ結果モードが「自動」以外のため、今は API を呼ばずローカルデモを返します。',
+            style: TextStyle(
+              color: Colors.orange.shade800,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        if (_image == null) ...[
+          const SizedBox(height: 8),
+          Text(
+            '画像未選択です。ギャラリーから家具の写真を追加してください。',
+            style: TextStyle(
+              color: Colors.orange.shade800,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

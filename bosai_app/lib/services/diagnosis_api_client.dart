@@ -54,12 +54,20 @@ class DiagnosisApiClient {
     final response = await http.Response.fromStream(streamed);
 
     Map<String, dynamic> body;
+    final rawBody = response.body.trim();
+    if (rawBody.isEmpty) {
+      throw DiagnosisApiException(
+        response.statusCode,
+        'サーバーから空の応答が返りました（${response.statusCode}）。',
+      );
+    }
+
     try {
-      body = jsonDecode(response.body) as Map<String, dynamic>;
+      body = jsonDecode(rawBody) as Map<String, dynamic>;
     } catch (_) {
       throw DiagnosisApiException(
         response.statusCode,
-        'サーバー応答の解析に失敗しました。',
+        'サーバー応答の解析に失敗しました（${response.statusCode}）。',
       );
     }
 
