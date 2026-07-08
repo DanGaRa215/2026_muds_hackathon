@@ -38,7 +38,7 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
   Future<void> _initMap() async {
     try {
       // PMTiles を assets からローカルストレージへコピー
-      final localPath = await _copyAssetToLocal('demo_area.pmtiles');
+      final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
 
       // タイルプロバイダ作成
       final provider = await PmTilesVectorTileProvider.fromSource(localPath);
