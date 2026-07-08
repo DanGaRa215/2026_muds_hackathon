@@ -1,0 +1,4 @@
+.venv/
+data/interim/
+data/raw/mergeFromCity_2.csv
+__pycache__/
