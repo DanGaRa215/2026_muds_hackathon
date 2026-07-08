@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'map_spike_screen.dart';
+import 'furniture_diagnosis_ui_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -124,7 +125,7 @@ class _DailyDashboardPage extends StatelessWidget {
                     _DailyMenuCardButton(
                       icon: Icons.camera_alt,
                       label: 'AI家具安全診断',
-                      onTap: () {},
+                      onTap: () => _push(context, const FurnitureDiagnosisUiScreen()),
                     ),
                     _DailyMenuCardButton(
                       icon: Icons.map,
@@ -254,14 +255,14 @@ class _MenuButton extends StatelessWidget {
     required this.label,
     required this.subtitle,
     required this.onTap,
-    this.color = const Color(0xFF300808),
   });
+
+  static const Color _textColor = Color(0xFF300808);
 
   final IconData icon;
   final String label;
   final String subtitle;
   final VoidCallback onTap;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -275,11 +276,11 @@ class _MenuButton extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+            border: Border.all(color: _textColor.withValues(alpha: 0.35)),
           ),
           child: Row(
             children: [
-              Icon(icon, color: color, size: 32),
+              Icon(icon, color: _textColor, size: 32),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -287,8 +288,8 @@ class _MenuButton extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: TextStyle(
-                        color: color,
+                        style: const TextStyle(
+                        color: _textColor,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
