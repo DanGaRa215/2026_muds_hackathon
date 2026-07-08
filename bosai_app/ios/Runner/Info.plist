@@ -55,6 +55,10 @@
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>現在地を地図上に表示するため、位置情報を使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>家具診断のために写真ライブラリから画像を選びます。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>家具診断のためにカメラで撮影します。</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -314,7 +314,8 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       case 'ok':
         return '診断が完了しました。';
       case 'retake':
-        return payload['message'] as String;
+        return (payload['message'] as String?) ??
+            _retakeMessageForReason(payload['reason'] as String?);
       case 'api_error':
         return (payload['message'] as String?) ?? 'もう一度お試しください。';
       default:
@@ -448,7 +449,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.analytics_outlined),
-                label: Text(_isLoading ? '判定中...' : '診断する'),
+                label: Text(_isLoading ? '判定中（最大2分）...' : '診断する'),
               ),
               if (_statusMessage != null) ...[
                 const SizedBox(height: 12),
@@ -475,6 +476,17 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         ),
       ),
     );
+  }
+
+  String _connectionPillLabel() {
+    if (!_hasApiConfig) return 'デモJSON';
+    if (_isLoading) return 'API通信中...';
+    return switch (_payload?['status'] as String?) {
+      'ok' => 'API診断成功',
+      'retake' => 'API応答あり',
+      'api_error' => 'APIエラー',
+      _ => 'API設定済み',
+    };
   }
 
   Widget _buildHeroCard() {
@@ -515,7 +527,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
             runSpacing: 8,
             children: [
               const _Pill(label: '参考値表示'),
-              _Pill(label: usingDemo ? 'デモJSON' : 'API接続準備OK'),
+              _Pill(label: usingDemo ? 'デモJSON' : _connectionPillLabel()),
               _Pill(label: '状態: ${_statusLabel(_payload?['status'] as String? ?? '待機')}'),
             ],
           ),
