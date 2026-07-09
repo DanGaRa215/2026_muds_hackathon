@@ -4,8 +4,6 @@ import 'package:sqflite/sqflite.dart';
 import '../models/diagnosis.dart';
 import '../models/shelter.dart';
 
-/// SQLite（sqflite）ラッパー。v1のGRDB相当。
-/// テーブル: shelters / diagnoses / home_info
 class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
@@ -48,6 +46,10 @@ class DatabaseHelper {
         await db.execute('''
           CREATE TABLE home_info(
             id INTEGER PRIMARY KEY CHECK(id = 1),
+            address TEXT NOT NULL,
+            lat REAL NOT NULL,
+            lon REAL NOT NULL,
+            pmtiles_path TEXT NOT NULL,
             structure TEXT NOT NULL,
             floor INTEGER NOT NULL
           )
@@ -60,8 +62,28 @@ class DatabaseHelper {
           await _createPrecomputedRoutes(db);
         }
       },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          final columns = await db.rawQuery('PRAGMA table_info(home_info)');
+          final columnNames = columns.map((row) => row['name'] as String).toSet();
+
+          if (!columnNames.contains('address')) {
+            await db.execute('ALTER TABLE home_info ADD COLUMN address TEXT NOT NULL DEFAULT "未登録住所"');
+          }
+          if (!columnNames.contains('lat')) {
+            await db.execute('ALTER TABLE home_info ADD COLUMN lat REAL NOT NULL DEFAULT 35.7434');
+          }
+          if (!columnNames.contains('lon')) {
+            await db.execute('ALTER TABLE home_info ADD COLUMN lon REAL NOT NULL DEFAULT 139.8472');
+          }
+          if (!columnNames.contains('pmtiles_path')) {
+            await db.execute('ALTER TABLE home_info ADD COLUMN pmtiles_path TEXT NOT NULL DEFAULT ""');
+          }
+        }
+      },
     );
   }
+
 
   /// v2: 事前計算した避難経路(仕様書② §7)
   Future<void> _createPrecomputedRoutes(Database db) async {
@@ -88,6 +110,7 @@ class DatabaseHelper {
 
   /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
   /// 座標・海抜・海岸距離はすべて仮の値。
+
   Future<void> _seedShelters(Database db) async {
     const shelters = [
       Shelter(
@@ -97,34 +120,6 @@ class DatabaseHelper {
         elevationM: 3, coastDistanceM: 9000,
         types: 'earthquake,fire', capacity: 800,
       ),
-      Shelter(
-        shelterId: 'demo-0002',
-        name: '中央中学校（ダミー）',
-        lat: 35.744, lon: 139.855,
-        elevationM: 8, coastDistanceM: 10500,
-        types: 'earthquake,tsunami', capacity: 1200,
-      ),
-      Shelter(
-        shelterId: 'demo-0003',
-        name: '緑地公園・広域避難場所（ダミー）',
-        lat: 35.756, lon: 139.840,
-        elevationM: 4, coastDistanceM: 9500,
-        types: 'earthquake,fire', capacity: 5000,
-      ),
-      Shelter(
-        shelterId: 'demo-0004',
-        name: '東高校（ダミー）',
-        lat: 35.738, lon: 139.842,
-        elevationM: 12, coastDistanceM: 11000,
-        types: 'earthquake,tsunami,fire', capacity: 1500,
-      ),
-      Shelter(
-        shelterId: 'demo-0005',
-        name: '区民センター（ダミー）',
-        lat: 35.747, lon: 139.836,
-        elevationM: 3, coastDistanceM: 9200,
-        types: 'earthquake', capacity: 400,
-      ),
     ];
     final batch = db.batch();
     for (final s in shelters) {
@@ -133,36 +128,56 @@ class DatabaseHelper {
     await batch.commit(noResult: true);
   }
 
-  // ---- shelters ----
-  Future<List<Shelter>> getShelters() async {
-    final db = await database;
-    final rows = await db.query('shelters');
-    return rows.map(Shelter.fromMap).toList();
-  }
-
-  // ---- diagnoses ----
-  Future<int> insertDiagnosis(Diagnosis d) async {
-    final db = await database;
-    return db.insert('diagnoses', d.toMap());
-  }
-
   Future<List<Diagnosis>> getDiagnoses() async {
     final db = await database;
     final rows = await db.query('diagnoses', orderBy: 'id DESC');
     return rows.map(Diagnosis.fromMap).toList();
   }
 
-  // ---- home_info ----
-  Future<void> saveHomeInfo({required String structure, required int floor}) async {
+  Future<void> saveHomeInfo({
+    required String structure,
+    required int floor,
+    String address = '未登録住所',
+    double lat = 35.7434,
+    double lon = 139.8472,
+    String pmtilesPath = '',
+  }) async {
     final db = await database;
     await db.insert(
       'home_info',
-      {'id': 1, 'structure': structure, 'floor': floor},
+      {
+        'id': 1,
+        'address': address,
+        'lat': lat,
+        'lon': lon,
+        'pmtiles_path': pmtilesPath,
+        'structure': structure,
+        'floor': floor,
+      },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
-  Future<Map<String, dynamic>?> getHomeInfo() async {
+  // 🎯 復活：自宅登録画面から位置情報とPMTilesパスを保存する用
+  Future<void> saveHomeMapInfo({
+    required String address,
+    required double lat,
+    required double lon,
+    required String pmtilesPath,
+    String structure = '木造',
+    int floor = 1,
+  }) async {
+    await saveHomeInfo(
+      structure: structure,
+      floor: floor,
+      address: address,
+      lat: lat,
+      lon: lon,
+      pmtilesPath: pmtilesPath,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getHomeMapInfo() async {
     final db = await database;
     final rows = await db.query('home_info', where: 'id = 1');
     return rows.isEmpty ? null : rows.first;

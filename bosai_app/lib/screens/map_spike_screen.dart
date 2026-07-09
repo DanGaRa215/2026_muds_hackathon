@@ -1,17 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
-/// PMTiles オフライン地図表示のスパイク検証画面。
-/// 既存画面に影響を与えない独立ファイル。検証後に削除 or NaviScreen へ統合。
+// 🎯 修正点①：DBから登録情報を引っ張ってくるためにインポート
+import '../db/database_helper.dart';
+
 class MapSpikeScreen extends StatefulWidget {
   const MapSpikeScreen({super.key});
 
@@ -20,74 +18,119 @@ class MapSpikeScreen extends StatefulWidget {
 }
 
 class _MapSpikeScreenState extends State<MapSpikeScreen> {
-  // 江戸川区中心付近
+  // デフォルト位置（万が一DBが空だった場合のフォールバック用：江戸川区付近）
   static const _defaultCenter = LatLng(35.7069, 139.8683);
-  static const _defaultZoom = 14.0;
 
   PmTilesVectorTileProvider? _tileProvider;
-  LatLng? _currentPosition;
+  LatLng _mapCenter = _defaultCenter; // 🎯 マップの中心位置（DBから取得する自宅の座標）
   String? _errorMessage;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _initMap();
+    _initMapFromDatabase();
   }
 
-  Future<void> _initMap() async {
+  // 🎯 核心修正②：DBから最新の登録住所（緯度経度・PMTilesパス）をロードするロジック
+  Future<void> _initMapFromDatabase() async {
     try {
-      // PMTiles を assets からローカルストレージへコピー
-      final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
+      // SQLiteから保存されている自宅情報を取得
+      final homeInfo = await DatabaseHelper.instance.getHomeMapInfo();
 
-      // タイルプロバイダ作成
-      final provider = await PmTilesVectorTileProvider.fromSource(localPath);
+      String targetPath = '';
+      LatLng targetLatLng = _defaultCenter;
 
-      // 現在地取得（失敗しても地図は表示する）
-      LatLng? position;
-      try {
-        position = await _getCurrentLocation();
-      } catch (e) {
-        debugPrint('Location unavailable: $e');
+      if (homeInfo != null && homeInfo['pmtiles_path'] != null) {
+        // DBにデータがある場合は、登録された「正確な緯度経度」と「PMTilesのパス」を使用
+        targetPath = homeInfo['pmtiles_path'];
+        targetLatLng = LatLng(homeInfo['lat'], homeInfo['lon']);
+      } else {
+        // 万が一まだ登録画面で一度も登録していなければ、例外を出して登録を促す
+        throw Exception("自宅情報が登録されていません。「自宅情報・マップ取得」画面から先に登録を行ってください。");
       }
+
+      final file = File(targetPath);
+      if (!await file.exists()) {
+        throw Exception("保存されたオフライン地図ファイルが見つかりません。再ダウンロードが必要です。");
+      }
+
+      // タイルプロバイダを作成
+      final provider = await PmTilesVectorTileProvider.fromSource(targetPath);
 
       if (mounted) {
         setState(() {
           _tileProvider = provider;
-          _currentPosition = position;
+          _mapCenter = targetLatLng; // 🎯 カメラ初期位置をDBに保存した自宅の場所にセット！
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _errorMessage = e.toString().replaceAll("Exception:", "");
           _isLoading = false;
         });
       }
     }
   }
 
-  /// Flutter assets はランダムアクセス不可のため、
-  /// PMTiles をローカルファイルにコピーして使う。
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
+  // レイヤー名を網羅してすり抜けを防ぐTheme定義
+  vtr.Theme _buildOfflineMapTheme() {
+    final knownLayers = ['water', 'building', 'roads', 'road', 'landuse', 'transportation', 'waterway', 'structure'];
 
-    if (!file.existsSync()) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
+    final List<Map<String, dynamic>> styleLayers = [
+      {
+        'id': 'background',
+        'type': 'background',
+        'paint': {
+          'background-color': '#f2efe9',
+        },
+      }
+    ];
+
+    for (final layerName in knownLayers) {
+      if (layerName.contains('water')) {
+        styleLayers.add({
+          'id': 'layer-$layerName',
+          'type': 'fill',
+          'source': 'pmtiles',
+          'source-layer': layerName,
+          'paint': {'fill-color': '#ccdff0'}
+        });
+      } else if (layerName.contains('building') || layerName.contains('structure')) {
+        styleLayers.add({
+          'id': 'layer-$layerName',
+          'type': 'fill',
+          'source': 'pmtiles',
+          'source-layer': layerName,
+          'paint': {
+            'fill-color': '#dedede',
+            'fill-outline-color': '#cccccc'
+          }
+        });
+      } else if (layerName.contains('landuse')) {
+        styleLayers.add({
+          'id': 'layer-$layerName',
+          'type': 'fill',
+          'source': 'pmtiles',
+          'source-layer': layerName,
+          'paint': {'fill-color': '#e1ebd5'}
+        });
+      } else {
+        styleLayers.add({
+          'id': 'layer-$layerName-line',
+          'type': 'line',
+          'source': 'pmtiles',
+          'source-layer': layerName,
+          'paint': {
+            'line-color': '#4a90d9',
+            'line-width': 1.8
+          }
+        });
+      }
     }
 
-    return file.path;
-  }
-
-  /// roads レイヤーのみのシンプルテーマ。
-  /// glyphs / sprite を参照しないためネットワーク不要。
-  vtr.Theme _buildRoadsTheme() {
     return vtr.ThemeReader().read({
       'version': 8,
       'sources': {
@@ -96,48 +139,8 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
           'url': 'pmtiles',
         },
       },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#4a90d9',
-            'line-width': 2.0,
-          },
-        },
-      ],
+      'layers': styleLayers,
     });
-  }
-
-  Future<LatLng?> _getCurrentLocation() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return null;
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return null;
-    }
-
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
-    );
-
-    return LatLng(position.latitude, position.longitude);
   }
 
   @override
@@ -161,7 +164,7 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('PMTilesを読み込み中...'),
+            Text('DBからオフライン地図データを読み込み中...'),
           ],
         ),
       );
@@ -172,45 +175,44 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Error: $_errorMessage',
-            style: const TextStyle(color: Colors.red, fontSize: 16),
+            _errorMessage!,
+            style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
         ),
       );
     }
 
-    final theme = _buildRoadsTheme();
-
     return FlutterMap(
       options: MapOptions(
-        initialCenter: _defaultCenter,
-        initialZoom: _defaultZoom,
+        initialCenter: _mapCenter, // 🎯 DBから取得した自宅位置が中心になります
+        initialZoom: 15.0,        // 自宅周辺がハッキリ見えるように少しズームアップ
         minZoom: 10,
         maxZoom: 16,
       ),
       children: [
         VectorTileLayer(
-          theme: theme,
+          theme: _buildOfflineMapTheme(),
           tileProviders: TileProviders({
             'pmtiles': _tileProvider!,
           }),
         ),
-        if (_currentPosition != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: _currentPosition!,
-                width: 20,
-                height: 20,
-                child: const Icon(
-                  Icons.my_location,
-                  color: Colors.blue,
-                  size: 20,
-                ),
+        
+        // 🎯 核心修正③：DBから読み込んだ「自宅の場所（_mapCenter）」に赤い大きなピンを刺す
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: _mapCenter,
+              width: 40,
+              height: 40,
+              child: const Icon(
+                Icons.location_on, // 災害時に目立つ赤いピンマーク
+                color: Colors.red,
+                size: 45,
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
       ],
     );
   }

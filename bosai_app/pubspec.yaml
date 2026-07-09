@@ -17,6 +17,7 @@ dependencies:
   http: ^1.2.2
   http_parser: ^4.0.2
   geocoding: ^5.0.0
+  http: ^1.2.2
   # オフライン地図表示（スパイク検証）
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
