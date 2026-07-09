@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../routing/models.dart';
 import 'shelter_card_screen.dart';
 
 class SituationCheckPage extends StatefulWidget {
@@ -39,6 +40,21 @@ class _SituationCheckPageState extends State<SituationCheckPage> {
       for (var index = 0; index < _options.length; index++)
         if (_selected[index]) _options[index].key,
     };
+  }
+
+  DisasterMode _disasterModeFor(Set<String> situation) {
+    // 既存語彙: injury/fire/collapse/tsunami。
+    // 将来の洪水・高潮・大雨キーも水害系として flood に寄せる。
+    const floodKeys = {
+      'tsunami',
+      'flood',
+      'storm_surge',
+      'heavy_rain',
+      'rain',
+    };
+    return situation.any(floodKeys.contains)
+        ? DisasterMode.flood
+        : DisasterMode.earthquake;
   }
 
   @override
@@ -130,10 +146,12 @@ class _SituationCheckPageState extends State<SituationCheckPage> {
               ),
             ),
             onPressed: () {
+              final situation = _selectedSituation();
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => ShelterProposalPage(
-                    situation: _selectedSituation(),
+                    situation: situation,
+                    disasterMode: _disasterModeFor(situation),
                   ),
                 ),
               );
