@@ -44,17 +44,21 @@ python3.12 -m venv .venv          # Python 3.11+
 
 ### 避難所(国土地理院 指定緊急避難場所データ)
 
-- 入力: `data/raw/shelters_edogawa.csv`(`--input` で変更可)
-- ファイルが無い場合は全国版CSVを自動ダウンロードして江戸川区分を抽出する:
+- 入力: 既定では `../bosai_app/assets/shelters.db` のGSIスナップショットから
+  `city_code = 13123` / `city_name = 江戸川区` の112件を抽出する
+- `shelters.db` が無い生成環境では、`data/raw/shelters_edogawa.csv`
+  (`--input` で変更可) にフォールバックする
+- CSVも無い場合は全国版CSVを自動ダウンロードして江戸川区分を抽出する:
   1. 配布元: 国土地理院「指定緊急避難場所データ」
      https://hinanmap.gsi.go.jp/hinanjocp/hinanbasho/koukaidate.html
   2. 全国版CSV(指定緊急避難場所・災害種別フラグ付き):
      https://hinanmap.gsi.go.jp/hinanjocp/defaultFtpData/csv/mergeFromCity_2.csv
   3. 「都道府県名及び市町村名」列 = `東京都江戸川区` の行を抽出し
      `data/raw/shelters_edogawa.csv` に保存(UTF-8 BOM付き)
-- 災害種別カラムの `types` 語彙へのマッピング(火山現象は語彙外のため対象外):
-  洪水→`flood` / 高潮→`surge` / 地震→`earthquake` / 津波→`tsunami` /
-  大規模な火事→`fire` / 崖崩れ、土石流及び地滑り→`landslide` / 内水氾濫→`inland_flood`
+- routing.db の `types` 語彙は Dart 側 `DisasterMode` に合わせて4種に限定する:
+  地震→`earthquake` / 大規模な火事→`fire` / 洪水→`flood` / 高潮→`surge`
+- 現在のGSI江戸川区112件では `flood` / `surge` 対応は0件。
+  これは該当なしとして扱い、アプリ側では全件fallbackしない
 - 元データに収容人数が無いため `capacity` は全件 0
 
 ### 標高(国土地理院 標高タイル)
@@ -66,7 +70,7 @@ python3.12 -m venv .venv          # Python 3.11+
 
 ## 検証の実装メモ
 
-- §7 の 1〜8 は `05_write_db.py` の `verify()` が生成後の `routing.db` 自体を
+- §7 の 1〜9 は `05_write_db.py` の `verify()` が生成後の `routing.db` 自体を
   読み取って判定し、1つでも失敗すると非0で終了する(§7.9)
 - §7.4 の「値域が -5.0〜+15.0 m に概ね収まる」は「範囲内が95%以上」と定義して判定
   (実測の min/max/範囲内比率を下表に記録)
@@ -75,7 +79,7 @@ python3.12 -m venv .venv          # Python 3.11+
 
 <!-- ACCEPTANCE_RESULTS:BEGIN -->
 
-- 検証日時: 2026-07-08T14:38:05.257288+00:00
+- 検証日時: 2026-07-09T18:46:45.322377+00:00
 - DB: `/Users/reo_huk/2026muds/2026_muds_hackathon/preprocess/output/routing.db` (13.3 MB)
 - 総合判定: **全て合格**
 
@@ -87,8 +91,9 @@ python3.12 -m venv .venv          # Python 3.11+
 | 4 | elevation_m NULL=0 かつ値域 -5〜+15m に概ね収まる | NULL=0 / -5.0〜+15.0m 内が95%以上 | NULL=0, min=-10.86m, max=27.13m, 範囲内=98.3% | ✅ PASS |
 | 5 | is_bridge=1 が50本以上 | ≥50本 | is_bridge=1: 779本 | ✅ PASS |
 | 6 | shelters ≥10件 かつ nearest_node 実在 | ≥10件 / JOIN不整合=0 | shelters=112, nearest_node不整合=0 | ✅ PASS |
-| 7 | 西葛西駅〜船堀駅の最短経路 1.5〜6.0km | 1,500〜6,000m | 経路長=2,507m (nodes 6183709275→4210150308) | ✅ PASS |
-| 8 | routing.db ≤80MB | ≤80MB | 13.3MB (13,897,728 bytes) | ✅ PASS |
+| 7 | shelters.types がrouting語彙と整合 | empty=0 / 語彙は earthquake,fire,flood,surge のみ。flood/surge=0は該当なし | empty=0, invalid=なし, flood/surge=0, distribution=earthquake:112 | ✅ PASS |
+| 8 | 西葛西駅〜船堀駅の最短経路 1.5〜6.0km | 1,500〜6,000m | 経路長=2,507m (nodes 6183709275→4210150308) | ✅ PASS |
+| 9 | routing.db ≤80MB | ≤80MB | 13.3MB (13,897,728 bytes) | ✅ PASS |
 
 <!-- ACCEPTANCE_RESULTS:END -->
 

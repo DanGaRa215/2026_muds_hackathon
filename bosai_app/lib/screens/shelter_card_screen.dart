@@ -75,7 +75,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
 
             final shelters = snapshot.data ?? const <ShelterInfo>[];
             if (shelters.isEmpty) {
-              return const Center(child: Text('避難所候補が見つかりません'));
+              return _buildEmptyState();
             }
 
             final shelter = shelters[_candidateIndex % shelters.length];
@@ -140,19 +140,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
             ),
             const SizedBox(height: 20),
             if (widget.disasterMode == DisasterMode.flood) ...[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF3FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Text(
-                    _floodGuidance,
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
+              _buildFloodGuidance(),
               const SizedBox(height: 16),
             ],
             Row(
@@ -220,6 +208,49 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '避難所候補が見つかりません',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _textColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (widget.disasterMode == DisasterMode.flood) ...[
+              const SizedBox(height: 16),
+              _buildFloodGuidance(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloodGuidance() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF3FF),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text(
+          _floodGuidance,
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );
