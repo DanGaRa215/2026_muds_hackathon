@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'map_spike_screen.dart';
+import 'furniture_diagnosis_ui_screen.dart';
+import 'package:bosai_app/screens/demo_map_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -18,24 +20,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _currentIndex = 0;
 
-  final List<Widget> _pages = const [
-    _DailyDashboardPage(),
-    _PlaceholderTabPage(
-      title: '家具診断履歴',
-      icon: Icons.history,
-      description: '過去の診断結果をここに表示します。',
-    ),
-    _PlaceholderTabPage(
-      title: '避難準備',
-      icon: Icons.map_outlined,
-      description: '避難計画や地図ダウンロード画面をここに接続します。',
-    ),
-    _PlaceholderTabPage(
-      title: 'アプリ設定',
-      icon: Icons.settings,
-      description: '通知や表示設定をここで管理します。',
-    ),
-  ];
+  List<Widget> _getPages() {
+    return [
+      const _DailyDashboardPage(isDemoMode: false), 
+      const _PlaceholderTabPage(
+        title: '家具診断履歴',
+        icon: Icons.history,
+        description: '過去の診断結果をここに表示します。',
+      ),
+      const _PlaceholderTabPage(
+        title: '避難準備',
+        icon: Icons.map_outlined,
+        description: '避難計画や地図ダウンロード画面をここに接続します。',
+      ),
+      // アプリ設定タブから HomeScreen の Context を利用してデモ画面へ遷移させる
+      _AppSettingsTabPage(onNavigateToDemo: () {
+        _push(context, const Scaffold(
+          body: SafeArea(child: _DailyDashboardPage(isDemoMode: true)),
+        ));
+      }),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: IndexedStack(
           index: _currentIndex,
-          children: _pages,
+          children: _getPages(),
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -83,133 +88,150 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  void _push(BuildContext context, Widget page) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
 }
 
 class _DailyDashboardPage extends StatelessWidget {
-  const _DailyDashboardPage();
+  final bool isDemoMode;
+
+  const _DailyDashboardPage({this.isDemoMode = false});
 
   static const Color _textColor = Color(0xFF300808);
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // スクロール可能なメインコンテンツ領域
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  '日常の防災メニュー',
-                  style: TextStyle(
-                    color: _textColor,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+    return Scaffold(
+      backgroundColor: const Color(0xFFE7FBF0),
+      appBar: isDemoMode 
+          ? AppBar(
+              backgroundColor: Colors.amber.shade700,
+              foregroundColor: Colors.white,
+              title: const Text('ハッカソン審査：江戸川区デモ画面', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              centerTitle: true,
+              elevation: 0,
+            )
+          : null,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
+                    style: const TextStyle(color: _textColor, fontSize: 22, fontWeight: FontWeight.bold),
                   ),
-                ),
-                const SizedBox(height: 12),
-                
-                // 🎯 4つのボタンを同じサイズで2×2のグリッドに統一配置
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.98,
-                  children: [
-                    _DailyMenuCardButton(
-                      icon: Icons.camera_alt,
-                      label: 'AI家具安全診断',
-                      onTap: () {},
+                  const SizedBox(height: 12),
+                  
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.98,
+                    children: [
+                      _DailyMenuCardButton(
+                        icon: Icons.camera_alt,
+                        label: 'AI家具安全診断',
+                        onTap: () => _push(context, const FurnitureDiagnosisUiScreen()),
+                      ),
+                      _DailyMenuCardButton(
+                        icon: Icons.map,
+                        label: '避難準備（マップDL）',
+                        onTap: () {
+                          if (isDemoMode) {
+                            // デモモード時は新設した専用マップ画面へジャンプ（constなし）
+                            _push(context, DemoMapScreen());
+                          } else {
+                            _push(context, const MapSpikeScreen());
+                          }
+                        },
+                      ),
+                      _DailyMenuCardButton(
+                        icon: Icons.history,
+                        label: '家具の診断履歴',
+                        onTap: () => _push(context, const HistoryScreen()),
+                      ),
+                      _DailyMenuCardButton(
+                        icon: Icons.home_work,
+                        label: '自宅の住所登録',
+                        onTap: () => _push(context, const AddressGeocodingScreen()),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  if (isDemoMode)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade900,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      icon: const Icon(Icons.warning_amber_rounded, size: 24),
+                      label: const Text('デモ実行：緊急地震速報（EEW）を発災', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const EewScreen()),
+                      ),
                     ),
-                    _DailyMenuCardButton(
-                      icon: Icons.map,
-                      label: '避難準備（マップDL）',
-                      onTap: () {},
-                    ),
-                    _DailyMenuCardButton(
-                      icon: Icons.history,
-                      label: '家具の診断履歴',
-                      onTap: () => _push(context, const HistoryScreen()),
-                    ),
-                    _DailyMenuCardButton(
-                      icon: Icons.home_work,
-                      label: '自宅の住所登録',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AddressGeocodingScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                
-                // --- SPIKE: 検ッセージ後に削除 ---
-                _MenuButton(
-                  icon: Icons.map,
-                  label: 'Map Spike (Dev)',
-                  subtitle: 'PMTilesオフライン地図テスト',
-                  onTap: () => _push(context, const MapSpikeScreen()),
-                ),
-                // --- END SPIKE ---
-              ],
-            ),
-          ),
-        ),
-        
-        // 🎯 フッター（ボトムナビ）の上に設置したデモボタンエリア
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(
-              top: BorderSide(color: _textColor.withValues(alpha: 0.1), width: 1),
-            ),
-          ),
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade800,
-              side: BorderSide(color: Colors.red.shade800, width: 1.5),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: const Icon(Icons.warning_amber_rounded),
-            label: const Text(
-              '審査用：EEWデモを起動する',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            ),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                fullscreenDialog: true,
-                builder: (_) => const EewScreen(),
+                ],
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AppSettingsTabPage extends StatelessWidget {
+  final VoidCallback onNavigateToDemo;
+
+  const _AppSettingsTabPage({required this.onNavigateToDemo});
+
+  static const Color _textColor = Color(0xFF300808);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'アプリ設定',
+            style: TextStyle(color: _textColor, fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 24),
+          
+          // 審査員専用のシンプルな起動用ListTileボタン
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade400, width: 1),
+            ),
+            leading: const Icon(Icons.developer_mode, color: _textColor),
+            title: const Text('ハッカソン審査用デモモードを起動', style: TextStyle(fontWeight: FontWeight.bold)),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: onNavigateToDemo,
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _DailyMenuCardButton extends StatelessWidget {
-  const _DailyMenuCardButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
+  const _DailyMenuCardButton({required this.icon, required this.label, required this.onTap});
   static const Color _textColor = Color(0xFF300808);
-
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -220,7 +242,6 @@ class _DailyMenuCardButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: _textColor,
-        elevation: 0,
         padding: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
@@ -233,98 +254,20 @@ class _DailyMenuCardButton extends StatelessWidget {
         children: [
           Icon(icon, size: 44),
           const SizedBox(height: 14),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: _textColor,
-            ),
-          ),
+          Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
         ],
       ),
     );
   }
 }
 
-class _MenuButton extends StatelessWidget {
-  const _MenuButton({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-    this.color = const Color(0xFF300808),
-  });
-
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final VoidCallback onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 32),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 void _push(BuildContext context, Widget page) {
-  Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => page),
-  );
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 }
 
 class _PlaceholderTabPage extends StatelessWidget {
-  const _PlaceholderTabPage({
-    required this.title,
-    required this.icon,
-    required this.description,
-  });
-
+  const _PlaceholderTabPage({required this.title, required this.icon, required this.description});
   static const Color _textColor = Color(0xFF300808);
-
   final String title;
   final IconData icon;
   final String description;
@@ -339,23 +282,9 @@ class _PlaceholderTabPage extends StatelessWidget {
           children: [
             Icon(icon, size: 56, color: _textColor),
             const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                color: _textColor,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(title, style: const TextStyle(color: _textColor, fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(
-              description,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _textColor,
-                fontSize: 16,
-              ),
-            ),
+            Text(description, textAlign: TextAlign.center, style: const TextStyle(color: _textColor, fontSize: 16)),
           ],
         ),
       ),
