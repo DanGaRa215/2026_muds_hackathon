@@ -1,5 +1,5 @@
 {
-  "verified_at": "2026-07-08T15:42:27.191560+00:00",
+  "verified_at": "2026-07-09T18:46:45.322377+00:00",
   "db_path": "/Users/reo_huk/2026muds/2026_muds_hackathon/preprocess/output/routing.db",
   "db_size_bytes": 13897728,
   "all_passed": true,
@@ -48,13 +48,20 @@
     },
     {
       "no": 7,
+      "name": "shelters.types がrouting語彙と整合",
+      "passed": true,
+      "measured": "empty=0, invalid=なし, flood/surge=0, distribution=earthquake:112",
+      "criterion": "empty=0 / 語彙は earthquake,fire,flood,surge のみ。flood/surge=0は該当なし"
+    },
+    {
+      "no": 8,
       "name": "西葛西駅〜船堀駅の最短経路 1.5〜6.0km",
       "passed": true,
       "measured": "経路長=2,507m (nodes 6183709275→4210150308)",
       "criterion": "1,500〜6,000m"
     },
     {
-      "no": 8,
+      "no": 9,
       "name": "routing.db ≤80MB",
       "passed": true,
       "measured": "13.3MB (13,897,728 bytes)",

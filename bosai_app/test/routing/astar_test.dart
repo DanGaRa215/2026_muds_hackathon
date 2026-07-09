@@ -84,6 +84,20 @@ class _GridSpec {
       edges[edgePos['$from-$to'] ?? edgePos['$to-$from']!].lengthM;
 }
 
+ShelterInfo _shelter(String id, String types) {
+  return ShelterInfo(
+    shelterId: id,
+    name: id,
+    lat: 35.66,
+    lon: 139.85,
+    elevationM: 0,
+    coastDistanceM: 0,
+    types: types,
+    capacity: 0,
+    nearestNode: 1,
+  );
+}
+
 void main() {
   group('A*格子グラフ正当性(§8.1)', () {
     test('1. ペナルティ全0のとき既知の最短経路距離と一致する', () {
@@ -273,6 +287,57 @@ void main() {
         rawReverse,
       );
       expect(backward, equals(rawReverse));
+    });
+  });
+
+  group('避難所typesフィルタ', () {
+    test('避難所単体の災害モード対応を判定する', () {
+      final earthquakeShelter = _shelter('s1', 'earthquake');
+      final floodShelter = _shelter('s2', 'flood,surge');
+
+      expect(
+        shelterSupportsMode(earthquakeShelter, DisasterMode.earthquake),
+        isTrue,
+      );
+      expect(
+        shelterSupportsMode(earthquakeShelter, DisasterMode.flood),
+        isFalse,
+      );
+      expect(shelterSupportsMode(floodShelter, DisasterMode.flood), isTrue);
+    });
+
+    test('flood/surge が無い地域では全件fallbackせず空を返す', () {
+      final shelters = [
+        _shelter('s1', 'earthquake'),
+        _shelter('s2', 'earthquake,fire'),
+      ];
+
+      final filtered = filterSheltersForMode(shelters, DisasterMode.flood);
+
+      expect(filtered, isEmpty);
+    });
+
+    test('flood/surge がある場合は対応避難所だけ返す', () {
+      final shelters = [
+        _shelter('s1', 'earthquake'),
+        _shelter('s2', 'flood'),
+        _shelter('s3', 'earthquake,surge'),
+      ];
+
+      final filtered = filterSheltersForMode(shelters, DisasterMode.flood);
+
+      expect(filtered.map((s) => s.shelterId), ['s2', 's3']);
+    });
+
+    test('全避難所のtypesが空なら旧DB保険として全件返す', () {
+      final shelters = [
+        _shelter('s1', ''),
+        _shelter('s2', ''),
+      ];
+
+      final filtered = filterSheltersForMode(shelters, DisasterMode.flood);
+
+      expect(filtered.map((s) => s.shelterId), ['s1', 's2']);
     });
   });
 }

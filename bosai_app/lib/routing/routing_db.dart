@@ -53,6 +53,7 @@ double _pointNodeDistance2(Graph graph, List<double> point, int nodeIndex) {
 /// グラフ本体は起動時に全件読み込み、探索中はSQLiteを一切叩かない(§4.2)。
 class RoutingDatabase {
   static const String assetName = 'routing.db';
+  static const String _assetRevision = '20260710_gsi_edogawa_types_v2';
 
   final Database db;
   final Graph graph;
@@ -110,16 +111,23 @@ class RoutingDatabase {
     );
   }
 
-  /// 既存 map_spike_screen.dart のPMTilesコピーと同一パターン。
+  /// assets/routing.db をローカルへ展開する。
+  /// routing.db は生成済みassetなので、リビジョンが変わった場合は再コピーする。
   static Future<String> _ensureLocalCopy() async {
     final dir = await getApplicationDocumentsDirectory();
     final file = File(p.join(dir.path, assetName));
-    if (!await file.exists()) {
+    final revisionFile = File(p.join(dir.path, '$assetName.revision'));
+
+    final currentRevision = await revisionFile.exists()
+        ? (await revisionFile.readAsString()).trim()
+        : null;
+    if (!await file.exists() || currentRevision != _assetRevision) {
       final data = await rootBundle.load('assets/$assetName');
       await file.writeAsBytes(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
         flush: true,
       );
+      await revisionFile.writeAsString(_assetRevision, flush: true);
     }
     return file.path;
   }

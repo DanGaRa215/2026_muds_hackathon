@@ -133,6 +133,33 @@ Map<int, PathOutcome> searchMultiGoal(
   return outcomes;
 }
 
+Set<String> shelterTypesForMode(DisasterMode mode) {
+  return mode == DisasterMode.earthquake
+      ? const {'earthquake', 'fire'}
+      : const {'flood', 'surge'};
+}
+
+bool shelterSupportsMode(ShelterInfo shelter, DisasterMode mode) {
+  final wanted = shelterTypesForMode(mode);
+  return shelter.typeList.any(wanted.contains);
+}
+
+/// モード別の避難所絞り込み。
+///
+/// types が投入済みのDBで該当0件なら、全件fallbackせず空リストを返す。
+/// 全避難所の types が空の場合のみ、旧DB/データ不備の保険として全件返す。
+List<ShelterInfo> filterSheltersForMode(
+  List<ShelterInfo> shelters,
+  DisasterMode mode,
+) {
+  final filtered = shelters.where((s) => shelterSupportsMode(s, mode)).toList();
+  if (filtered.isNotEmpty) return filtered;
+
+  final hasAnyTypes = shelters.any((s) => s.typeList.isNotEmpty);
+  if (!hasAnyTypes) return List.of(shelters);
+  return const <ShelterInfo>[];
+}
+
 /// 経路探索の公開窓口(§3)。仕様書③がこの型に依存する。
 class RouteService implements RouteSearchClient {
   final RoutingDatabase _rdb;
@@ -171,6 +198,16 @@ class RouteService implements RouteSearchClient {
       developer.log('避難所が見つからない: $shelterId', name: 'routing', level: 900);
       return null;
     }
+    final shelter = _rdb.shelters[shelterIndex];
+    final hasAnyTypes = _rdb.shelters.any((s) => s.typeList.isNotEmpty);
+    if (hasAnyTypes && !shelterSupportsMode(shelter, mode)) {
+      developer.log(
+        '避難所 ${shelter.shelterId} は $mode に対応していない',
+        name: 'routing',
+        level: 900,
+      );
+      return null;
+    }
     final goal = _rdb.shelterNodeIndexes[shelterIndex];
     if (goal < 0) return null;
 
@@ -184,7 +221,7 @@ class RouteService implements RouteSearchClient {
     final outcome = await Isolate.run(
         () => searchSingleGoal(graph, start, goal, mode, profile));
     if (outcome == null) return null;
-    return _buildResult(_rdb.shelters[shelterIndex], mode, profile, outcome);
+    return _buildResult(shelter, mode, profile, outcome);
   }
 
   /// 1始点→複数避難所の一括探索(h=0のDijkstra)。事前計算が使う。
@@ -233,20 +270,21 @@ class RouteService implements RouteSearchClient {
   }
 
   /// モードに対応した避難所一覧(shelters.types に基づく §5.2)。
-  /// フィルタ結果が0件の場合はデータ不備の保険として全件を返し警告を出す。
+  /// types が正しく入った結果0件の場合は、該当なしとして空リストを返す。
   List<ShelterInfo> sheltersFor(DisasterMode mode) {
-    final wanted = mode == DisasterMode.earthquake
-        ? const {'earthquake', 'fire'}
-        : const {'flood', 'surge'};
-    final filtered =
-        _rdb.shelters.where((s) => s.typeList.any(wanted.contains)).toList();
+    final filtered = filterSheltersForMode(_rdb.shelters, mode);
     if (filtered.isEmpty) {
       developer.log(
-        'sheltersFor($mode): typesフィルタが0件。データ不備の可能性があるため全件を返す',
+        'sheltersFor($mode): 対応する避難所が0件',
         name: 'routing',
         level: 900,
       );
-      return List.of(_rdb.shelters);
+    } else if (!_rdb.shelters.any((s) => s.typeList.isNotEmpty)) {
+      developer.log(
+        'sheltersFor($mode): 全避難所のtypesが空。データ不備の保険として全件を返す',
+        name: 'routing',
+        level: 900,
+      );
     }
     return filtered;
   }

@@ -78,6 +78,7 @@ STATIONS = {
     "西葛西駅": (35.6647, 139.8586),
     "船堀駅": (35.6837, 139.8646),
 }
+ROUTING_SHELTER_TYPES = {"earthquake", "fire", "flood", "surge"}
 
 
 def build_db() -> None:
@@ -214,7 +215,29 @@ def verify() -> bool:
         f"shelters={shelter_count}, nearest_node不整合={orphan}",
         "≥10件 / JOIN不整合=0")
 
-    # 7. 検証探索 (西葛西駅〜船堀駅)
+    type_rows = [row[0] for row in conn.execute("SELECT types FROM shelters")]
+    empty_types = sum(1 for value in type_rows if not str(value).strip())
+    invalid_tokens = sorted({
+        token
+        for value in type_rows
+        for token in str(value).split(",")
+        if token.strip() and token.strip() not in ROUTING_SHELTER_TYPES
+    })
+    flood_surge = conn.execute(
+        "SELECT COUNT(*) FROM shelters"
+        " WHERE types LIKE '%flood%' OR types LIKE '%surge%'"
+    ).fetchone()[0]
+    distribution = conn.execute(
+        "SELECT types, COUNT(*) FROM shelters GROUP BY types ORDER BY types"
+    ).fetchall()
+    distribution_text = ", ".join(f"{types or '(empty)'}:{count}" for types, count in distribution)
+    add(7, "shelters.types がrouting語彙と整合",
+        empty_types == 0 and not invalid_tokens,
+        f"empty={empty_types}, invalid={invalid_tokens or 'なし'}, "
+        f"flood/surge={flood_surge}, distribution={distribution_text}",
+        "empty=0 / 語彙は earthquake,fire,flood,surge のみ。flood/surge=0は該当なし")
+
+    # 8. 検証探索 (西葛西駅〜船堀駅)
     node_rows = conn.execute("SELECT id, lat, lon FROM nodes").fetchall()
     xs, ys = TO_PLANE.transform([r[2] for r in node_rows], [r[1] for r in node_rows])
     tree = STRtree([Point(x, y) for x, y in zip(xs, ys)])
@@ -231,12 +254,12 @@ def verify() -> bool:
         measured = f"経路長={path_len:,.0f}m (nodes {station_nodes['西葛西駅']}→{station_nodes['船堀駅']})"
     except nx.NetworkXNoPath:
         path_ok, measured = False, "経路なし"
-    add(7, "西葛西駅〜船堀駅の最短経路 1.5〜6.0km", path_ok, measured, "1,500〜6,000m")
+    add(8, "西葛西駅〜船堀駅の最短経路 1.5〜6.0km", path_ok, measured, "1,500〜6,000m")
 
-    # 8. ファイルサイズ
+    # 9. ファイルサイズ
     size_bytes = DB_PATH.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    add(8, "routing.db ≤80MB", size_bytes <= 80 * 1024 * 1024,
+    add(9, "routing.db ≤80MB", size_bytes <= 80 * 1024 * 1024,
         f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤80MB")
 
     conn.close()
