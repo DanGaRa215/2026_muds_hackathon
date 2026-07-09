@@ -55,29 +55,18 @@ class DatabaseHelper {
           )
         ''');
         await _seedShelters(db);
+        await _createPrecomputedRoutes(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          final columns = await db.rawQuery('PRAGMA table_info(home_info)');
-          final columnNames = columns.map((row) => row['name'] as String).toSet();
-
-          if (!columnNames.contains('address')) {
-            await db.execute('ALTER TABLE home_info ADD COLUMN address TEXT NOT NULL DEFAULT "未登録住所"');
-          }
-          if (!columnNames.contains('lat')) {
-            await db.execute('ALTER TABLE home_info ADD COLUMN lat REAL NOT NULL DEFAULT 35.7434');
-          }
-          if (!columnNames.contains('lon')) {
-            await db.execute('ALTER TABLE home_info ADD COLUMN lon REAL NOT NULL DEFAULT 139.8472');
-          }
-          if (!columnNames.contains('pmtiles_path')) {
-            await db.execute('ALTER TABLE home_info ADD COLUMN pmtiles_path TEXT NOT NULL DEFAULT ""');
-          }
+          await _createPrecomputedRoutes(db);
         }
       },
     );
   }
 
+  /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
+  /// 座標・海抜・海岸距離はすべて仮の値。
   Future<void> _seedShelters(Database db) async {
     const shelters = [
       Shelter(

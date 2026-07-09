@@ -1,0 +1,10 @@
+# 仕様書§4 確定ライブラリ
+osmnx>=2.0
+shapely>=2.0
+pyproj>=3.6
+pandas
+requests
+# 以下は補助(中間ファイルのparquet入出力・osmnxの依存)
+pyarrow
+networkx
+geopandas
