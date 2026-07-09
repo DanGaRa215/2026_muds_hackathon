@@ -60,10 +60,7 @@ class DatabaseHelper {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createPrecomputedRoutes(db);
-        }
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
+
           final columns = await db.rawQuery('PRAGMA table_info(home_info)');
           final columnNames = columns.map((row) => row['name'] as String).toSet();
 
@@ -83,7 +80,6 @@ class DatabaseHelper {
       },
     );
   }
-
 
   /// v2: 事前計算した避難経路(仕様書② §7)
   Future<void> _createPrecomputedRoutes(Database db) async {
@@ -110,7 +106,6 @@ class DatabaseHelper {
 
   /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
   /// 座標・海抜・海岸距離はすべて仮の値。
-
   Future<void> _seedShelters(Database db) async {
     const shelters = [
       Shelter(
@@ -127,6 +122,40 @@ class DatabaseHelper {
     }
     await batch.commit(noResult: true);
   }
+
+  // =====================================================================
+  // 💡 修正・適合させたメソッド群
+  // =====================================================================
+
+  /// 自宅情報を取得する (getHomeInfo)
+  Future<Map<String, dynamic>?> getHomeInfo() async {
+    final db = await database;
+    final rows = await db.query('home_info', limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// 避難所一覧を取得する (getShelters)
+  /// 💡 Mapのリストから Shelter クラスのリストへ自動変換するように修正
+  Future<List<Shelter>> getShelters() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('shelters');
+    return maps.map(Shelter.fromMap).toList();
+  }
+
+  /// 家具診断の結果を保存する (insertDiagnosis)
+  /// 💡 引数で Diagnosis オブジェクトを直接受け取り、内部で .toMap() するように修正
+  Future<int> insertDiagnosis(Diagnosis diagnosis) async {
+    final db = await database;
+    return await db.insert(
+      'diagnoses', 
+      diagnosis.toMap(), 
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  // =====================================================================
+  // 既存のメソッド
+  // =====================================================================
 
   Future<List<Diagnosis>> getDiagnoses() async {
     final db = await database;
