@@ -85,13 +85,28 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
   }
 
   vtr.Theme _buildDemoTheme() {
+    final knownLayers = ['water', 'building', 'roads', 'road', 'landuse', 'transportation', 'waterway', 'structure'];
+
+    final List<Map<String, dynamic>> styleLayers = [
+      {'id': 'background', 'type': 'background', 'paint': {'background-color': '#f2efe9'}},
+    ];
+
+    for (final layerName in knownLayers) {
+      if (layerName.contains('water')) {
+        styleLayers.add({'id': 'layer-$layerName', 'type': 'fill', 'source': 'pmtiles', 'source-layer': layerName, 'paint': {'fill-color': '#ccdff0'}});
+      } else if (layerName.contains('building') || layerName.contains('structure')) {
+        styleLayers.add({'id': 'layer-$layerName', 'type': 'fill', 'source': 'pmtiles', 'source-layer': layerName, 'paint': {'fill-color': '#dedede', 'fill-outline-color': '#cccccc'}});
+      } else if (layerName.contains('landuse')) {
+        styleLayers.add({'id': 'layer-$layerName', 'type': 'fill', 'source': 'pmtiles', 'source-layer': layerName, 'paint': {'fill-color': '#e1ebd5'}});
+      } else {
+        styleLayers.add({'id': 'layer-$layerName-line', 'type': 'line', 'source': 'pmtiles', 'source-layer': layerName, 'paint': {'line-color': '#4a90d9', 'line-width': 1.8}});
+      }
+    }
+
     return vtr.ThemeReader().read({
       'version': 8,
       'sources': {'pmtiles': {'type': 'vector', 'url': 'pmtiles'}},
-      'layers': [
-        {'id': 'background', 'type': 'background', 'paint': {'background-color': '#f5f4f0'}},
-        {'id': 'roads', 'type': 'line', 'source': 'pmtiles', 'source-layer': '*', 'paint': {'line-color': '#4a90d9', 'line-width': 1.8}}
-      ],
+      'layers': styleLayers,
     });
   }
 
