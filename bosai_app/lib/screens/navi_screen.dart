@@ -600,15 +600,15 @@ class _NaviScreenState extends State<NaviScreen> {
               segments: const [
                 ButtonSegment(
                   value: WeightProfile.fastest,
-                  label: Text('最短'),
+                  label: Text('ルート1'),
                 ),
                 ButtonSegment(
                   value: WeightProfile.balanced,
-                  label: Text('バランス'),
+                  label: Text('ルート2'),
                 ),
                 ButtonSegment(
                   value: WeightProfile.safest,
-                  label: Text('安全重視'),
+                  label: Text('ルート3'),
                 ),
               ],
               selected: {_selectedProfile},
