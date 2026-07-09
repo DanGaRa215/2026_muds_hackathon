@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,73 +18,125 @@ class AddressGeocodingScreen extends StatefulWidget {
 }
 
 class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
-  final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _zipController = TextEditingController(); // 郵便番号用
+  final TextEditingController _addressController = TextEditingController(); // 住所用
   final custom_geo.Geocoding _geocoding = custom_geo.Geocoding();
   final MapController _mapController = MapController();
   
   bool _isLoading = false;
-  String _statusText = "住所を入力して検索してください";
+  String _statusText = "郵便番号を入力して、住所を検索してください";
   
-  // 初期位置（江戸川区周辺）
+  // 初期位置（デフォルト：江戸川区周辺）
   LatLng _previewCenter = const LatLng(35.7069, 139.8687); 
   bool _hasSearched = false;
 
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  // 🌍 住所から識別キー（サーバーのファイル名）を判定
-  String _getCityKey(String address) {
-    final tokyo23Wards = ["江戸川", "葛飾", "江東", "墨田", "足立", "荒川", "港区", "新宿", "品川", "目黒", "大田", "世田谷", "渋谷", "中野", "杉並", "練馬", "台東", "文京", "千代田", "中央区", "豊島", "北区", "板橋"];
-    for (var ward in tokyo23Wards) {
-      if (address.contains(ward)) return "demo_area"; 
-    }
-    
-    if (address.contains("浦安")) return "urayasu";
-    if (address.contains("市川")) return "ichikawa";
-    return "demo_area"; 
-  }
-
-  // 📥 住所をオンライン特定し、裏でオフライン用PMTilesを同期ダウンロードする処理
-  Future<void> _searchAndDownloadOfflineMap() async {
-    final address = _addressController.text.trim();
-    if (address.isEmpty) {
+  /// 📮 1. 郵便番号から住所を自動検索する処理（zipcloud API を使用）
+  Future<void> _searchAddressByZip() async {
+    final zipCode = _zipController.text.trim().replaceAll('-', ''); // ハイフンを除去
+    if (zipCode.isEmpty || zipCode.length != 7) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("住所を入力してください")),
+        const SnackBar(content: Text("正しい郵便番号（7桁）を入力してください")),
       );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _statusText = "住所の座標を特定中...";
+      _statusText = "📮 郵便番号から住所を検索中...";
     });
 
+    try {
+      final url = Uri.parse('https://zipcloud.ibsnet.co.jp/api/search?zipcode=$zipCode');
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['results'] != null && data['results'].isNotEmpty) {
+          final result = data['results'][0];
+          // 都道府県 + 市区町村 + 町域名 を結合
+          final fullAddress = "${result['address1']}${result['address2']}${result['address3']}";
+          
+          _addressController.text = fullAddress;
+          
+          setState(() {
+            _statusText = "📍 住所を検出しました！続けて地図へ反映します...";
+          });
+
+          // 自動で次のステップ（地図表示）へ進む
+          await _updateMapPreview(fullAddress);
+        } else {
+          setState(() => _statusText = "該当する住所が見つかりませんでした。");
+        }
+      } else {
+        throw Exception("郵便番号サーバーへの接続に失敗しました");
+      }
+    } catch (e) {
+      setState(() => _statusText = "エラーが発生しました: $e");
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  /// 🗺️ 2. 確定した住所から経緯度を特定し、地図に表示する内部処理
+  Future<void> _updateMapPreview(String address) async {
     try {
       List<custom_geo.Location> locations = await _geocoding.locationFromAddress(address);
 
       if (locations.isEmpty) {
-        setState(() => _statusText = "指定された住所が見つかりませんでした。");
+        setState(() => _statusText = "住所の位置（座標）が特定できませんでした。");
         return;
       }
 
       final location = locations.first;
       final targetCenter = LatLng(location.latitude, location.longitude);
-      final cityKey = _getCityKey(address);
 
-      // 🎯 修正点①：オンラインマップのカメラを、検索した住所のドンピシャへ滑らかに移動
+      // 地図のカメラを移動
       _mapController.move(targetCenter, 15.0);
 
+      setState(() {
+        _previewCenter = targetCenter;
+        _hasSearched = true;
+        _statusText = "🗺️ 地図にプレビューを表示しました！\n問題なければ下のボタンから地図を同期してください。";
+      });
+    } catch (e) {
+      setState(() => _statusText = "地図の反映に失敗しました。手動で微調整してください。\n詳細: $e");
+    }
+  }
+
+  /// 🌍 識別キーの判定
+  String _getCityKey(String address) {
+    final tokyo23Wards = ["江戸川", "葛飾", "江東", "墨田", "足立", "荒川", "港区", "新宿", "品川", "目黒", "大田", "世田谷", "渋谷", "中野", "杉並", "練馬", "台東", "文京", "千代田", "中央区", "豊島", "北区", "板橋"];
+    for (var ward in tokyo23Wards) {
+      if (address.contains(ward)) return "demo_area"; 
+    }
+    return "demo_area"; 
+  }
+
+  /// 📥 3. 最後に地図（PMTiles）をダウンロード・同期する処理
+  Future<void> _downloadOfflineMap() async {
+    final address = _addressController.text.trim();
+    if (address.isEmpty || !_hasSearched) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("先に郵便番号から位置を確定させてください")),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _statusText = "💾 オフライン地図データを同期中...";
+    });
+
+    try {
+      final cityKey = _getCityKey(address);
       String savedPmtilesPath = '';
 
       if (cityKey == "demo_area") {
         setState(() => _statusText = "23区内のデータを検知しました。内蔵オフラインマップ（tokyo23_buffered）を同期中...");
         final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
         savedPmtilesPath = localPath;
-        
       } else {
-        setState(() => _statusText = "周辺のオフラインマップデータをダウンロード中...\n(サーバーから ${cityKey}.pmtiles を取得しています)");
+        setState(() => _statusText = "周辺のオフラインマップデータをダウンロード中...\n(サーバーから $cityKey.pmtiles を取得しています)");
 
         final directory = await getApplicationDocumentsDirectory();
         final localPath = '${directory.path}/$cityKey.pmtiles';
@@ -102,17 +155,15 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
         savedPmtilesPath = localPath;
       }
 
-      // SQLiteに「正確な緯度経度」と「オフラインPMTilesパス」を完全保存
+      // SQLiteに最終保存
       await DatabaseHelper.instance.saveHomeMapInfo(
         address: address,
-        lat: targetCenter.latitude,
-        lon: targetCenter.longitude,
+        lat: _previewCenter.latitude,
+        lon: _previewCenter.longitude,
         pmtilesPath: savedPmtilesPath,
       );
 
       setState(() {
-        _previewCenter = targetCenter;
-        _hasSearched = true;
         _statusText = "🎉 [$cityKey.pmtiles] のダウンロード＆自宅登録に成功しました！";
       });
 
@@ -121,8 +172,8 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
-          title: const Text('設定＆ダウンロード完了 🚀'),
-          content: Text('対象エリアのオフライン地図ファイル（$cityKey.pmtiles）を端末内に同期しました。\n\nこれで完全オフライン状態（圏外）になっても、この地域の災害ナビが100%作動します！'),
+          title: const Text('同期・ダウンロード完了'),
+          content: Text('対象エリアの地図ファイルを端末内に保存しました。\n\nこれで完全オフライン（圏外）になってもナビが利用可能です。\n\n'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -166,7 +217,7 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
     return Scaffold(
       backgroundColor: subBackgroundColor,
       appBar: AppBar(
-        title: const Text('自宅情報・マップ取得'),
+        title: const Text('自宅住所・マップ登録'),
         backgroundColor: subBackgroundColor,
         foregroundColor: mainColor,
         elevation: 0,
@@ -176,45 +227,62 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              '平常時に自宅周辺のPMTilesマップを登録しておき、災害時（完全圏外）に備えましょう。',
-              style: TextStyle(color: mainColor, fontWeight: FontWeight.bold),
+            // 📮 ステップ1: 郵便番号入力フォーム
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: _zipController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      fillColor: Colors.white,
+                      filled: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      labelText: '郵便番号 (ハイフンなし)',
+                      hintText: '1340001(7桁)',
+                      prefixIcon: const Icon(Icons.local_post_office, color: mainColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 1,
+                  child: SizedBox(
+                    height: 55,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: mainColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _isLoading ? null : _searchAddressByZip,
+                      child: const Text('住所検索', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             
+            // 📝 ステップ2: 下の住所表示フォーム（微調整できるように手動入力も可能）
             TextField(
               controller: _addressController,
               decoration: InputDecoration(
                 fillColor: Colors.white,
                 filled: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                labelText: '住所を入力 (例: 東京都江戸川区中央)',
-                prefixIcon: const Icon(Icons.map, color: mainColor),
+                labelText: '取得された住所 (番地などは追記してください)',
+                prefixIcon: const Icon(Icons.home, color: mainColor),
               ),
-            ),
-            const SizedBox(height: 12),
-            
-            SizedBox(
-              height: 50,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: mainColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _isLoading ? null : _searchAndDownloadOfflineMap,
-                icon: _isLoading 
-                    ? const SizedBox(
-                        width: 20, 
-                        height: 20, 
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_lock),
-                label: const Text('位置特定 ＆ オフライン地図を同期', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
+              onChanged: (val) {
+                if (val.isNotEmpty) _updateMapPreview(val);
+              },
             ),
             const SizedBox(height: 16),
 
+            // 📢 ステータス通知
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -223,54 +291,58 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
               ),
               child: Text(
                 _statusText,
-                style: const TextStyle(fontSize: 14, color: mainColor, fontWeight: FontWeight.w500),
+                style: const TextStyle(fontSize: 13, color: mainColor, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 16),
 
+            // 🗺️ ステップ3: 地図にその部分を表示
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '🗺️ 自宅登録マッププレビュー (通常のオンラインマップでサクサク動きます)',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: mainColor),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _previewCenter,
+                    initialZoom: 14.0,
+                    maxZoom: 18,
+                    minZoom: 1,
                   ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter: _previewCenter,
-                          initialZoom: 14.0,
-                          maxZoom: 18,
-                          minZoom: 1,
-                        ),
-                        children: [
-                          // 🎯 修正点②：プレビューを100%滑らかに表示できる標準オンラインレイヤーに差し替え
-                          TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'package:bosai_app',
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'package:bosai_app',
+                    ),
+                    if (_hasSearched)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _previewCenter,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(Icons.location_on, color: Colors.red, size: 45),
                           ),
-                          if (_hasSearched)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: _previewCenter,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(Icons.location_on, color: Colors.red, size: 45),
-                                ),
-                              ],
-                            ),
                         ],
                       ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 📥 ステップ4: 最後に地図をダウンロードするボタン
+            SizedBox(
+              height: 55,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _hasSearched ? Colors.green[800] : Colors.grey,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: (_isLoading || !_hasSearched) ? null : _downloadOfflineMap,
+                icon: const Icon(Icons.download, size: 24),
+                label: const Text('このエリアのオフライン地図をダウンロード', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ),
           ],
