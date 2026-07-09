@@ -7,8 +7,10 @@ import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
+import 'package:bosai_app/db/demo_database_helper.dart';
+import 'package:bosai_app/screens/demo_address_geocoding_screen.dart';
+
 /// 🛠️ ハッカソン審査・デモ専用の地図画面（江戸川区特化）
-/// 他のメンバーが避難所データやUIのカスタマイズを行う場合は、このファイルを修正してください。
 class DemoMapScreen extends StatefulWidget {
   const DemoMapScreen({super.key});
 
@@ -17,27 +19,52 @@ class DemoMapScreen extends StatefulWidget {
 }
 
 class _DemoMapScreenState extends State<DemoMapScreen> {
-  // デモの初期位置：江戸川区周辺
-  static const _edogawaCenter = LatLng(35.7069, 139.8683);
+  static const _defaultCenter = LatLng(35.7069, 139.8683);
 
   PmTilesVectorTileProvider? _tileProvider;
+  LatLng _mapCenter = _defaultCenter;
   bool _isLoading = true;
   String? _errorMessage;
+  
+  // デモ住所が登録されているかを管理するフラグ
+  bool _isAddressRegistered = false;
 
   @override
   void initState() {
     super.initState();
-    _loadDemoPmtiles();
+    _loadDemoEnvironment();
   }
 
-  Future<void> _loadDemoPmtiles() async {
+  Future<void> _loadDemoEnvironment() async {
     try {
-      final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
-      final provider = await PmTilesVectorTileProvider.fromSource(localPath);
+      final demoInfo = await DemoAddressDatabaseHelper.instance.getDemoHomeMapInfo();
+
+      String targetPath = '';
+      LatLng targetLatLng = _defaultCenter;
+      bool registered = false;
+
+      if (demoInfo != null) {
+        // デモDBにデータが存在する場合
+        targetPath = demoInfo['pmtiles_path'];
+        targetLatLng = LatLng(demoInfo['lat'], demoInfo['lon']);
+        registered = true;
+      } else {
+        // デモDBが空の場合（未登録時）はデフォルトのアセットを読み込む
+        targetPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
+      }
+
+      final file = File(targetPath);
+      if (!await file.exists()) {
+        targetPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
+      }
+
+      final provider = await PmTilesVectorTileProvider.fromSource(targetPath);
 
       if (mounted) {
         setState(() {
           _tileProvider = provider;
+          _mapCenter = targetLatLng;
+          _isAddressRegistered = registered; // フラグを更新
           _isLoading = false;
         });
       }
@@ -65,7 +92,6 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
     return file.path;
   }
 
-  // デモ専用の地図指示書（Theme）
   vtr.Theme _buildDemoTheme() {
     return vtr.ThemeReader().read({
       'version': 8,
@@ -99,30 +125,79 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Center(child: Text('エラー: $_errorMessage'))
-              : FlutterMap(
-                  options: const MapOptions(
-                    initialCenter: _edogawaCenter,
-                    initialZoom: 14.0,
-                    minZoom: 11,
-                    maxZoom: 16,
-                  ),
+              : Stack(
                   children: [
-                    VectorTileLayer(
-                      theme: _buildDemoTheme(),
-                      tileProviders: TileProviders({'pmtiles': _tileProvider!}),
-                    ),
-                    
-                    // 🎯 【メンバー追加用エリア】：江戸川区の避難所ピンなどはここに配列として追加していきます
-                    MarkerLayer(
-                      markers: [
-                        const Marker(
-                          point: _edogawaCenter,
-                          width: 40,
-                          height: 40,
-                          child: Icon(Icons.location_on, color: Colors.red, size: 40),
+                    // 地図本体
+                    FlutterMap(
+                      options: MapOptions(
+                        initialCenter: _mapCenter,
+                        initialZoom: 14.0,
+                        minZoom: 11,
+                        maxZoom: 16,
+                      ),
+                      children: [
+                        VectorTileLayer(
+                          theme: _buildDemoTheme(),
+                          tileProviders: TileProviders({'pmtiles': _tileProvider!}),
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            // 登録されている時だけピンを表示（未登録時は表示しない）
+                            if (_isAddressRegistered)
+                              Marker(
+                                point: _mapCenter,
+                                width: 40,
+                                height: 40,
+                                child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                              ),
+                          ],
                         ),
                       ],
                     ),
+
+                    // 住所未登録の時だけ、地図の上に警告アナウンスをオーバーレイ表示
+                    if (!_isAddressRegistered)
+                      Positioned(
+                        top: 16,
+                        left: 16,
+                        right: 16,
+                        child: Card(
+                          color: Colors.red.shade50,
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  // 🎯 修正2：const を外して遷移させる
+                                  builder: (_) => const DemoAddressGeocodingScreen(),
+                                ),
+                              ).then((_) => _loadDemoEnvironment()); // 戻ってきた時に地図をリロード
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.error_outline, color: Colors.red.shade800, size: 24),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      '住所登録ができていません。\nここをタップして自宅の登録を行ってください。',
+                                      style: TextStyle(
+                                        color: Colors.red.shade900,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(Icons.chevron_right, color: Colors.red.shade800, size: 20),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
     );
