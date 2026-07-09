@@ -4,9 +4,11 @@ import 'package:sqflite/sqflite.dart';
 import '../models/diagnosis.dart';
 import '../models/shelter.dart';
 
-class DatabaseHelper {
-  DatabaseHelper._();
-  static final DatabaseHelper instance = DatabaseHelper._();
+/// 🎯 デモ・検証専用の隔離されたSQLiteヘルパー
+/// ファイル名を『demo_database_helper.db』に変更し、本番のテーブル構造・バージョンと完全同期しました。
+class DemoDatabaseHelper {
+  DemoDatabaseHelper._();
+  static final DemoDatabaseHelper instance = DemoDatabaseHelper._();
 
   static Database? _db;
 
@@ -16,11 +18,13 @@ class DatabaseHelper {
   }
 
   Future<Database> _open() async {
-    final path = join(await getDatabasesPath(), 'bosai_app.db');
+    // 💡 ファイル名を指定の通り完全に統一
+    final path = join(await getDatabasesPath(), 'demo_database_helper.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 2, // 本番のバージョン「2」と一致
       onCreate: (db, version) async {
+        // 1. shelters テーブルの作成
         await db.execute('''
           CREATE TABLE shelters(
             shelter_id TEXT PRIMARY KEY,
@@ -33,6 +37,8 @@ class DatabaseHelper {
             capacity INTEGER NOT NULL
           )
         ''');
+
+        // 2. diagnoses テーブルの作成
         await db.execute('''
           CREATE TABLE diagnoses(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +49,8 @@ class DatabaseHelper {
             comment TEXT NOT NULL
           )
         ''');
+
+        // 3. home_info テーブルの作成
         await db.execute('''
           CREATE TABLE home_info(
             id INTEGER PRIMARY KEY CHECK(id = 1),
@@ -54,22 +62,22 @@ class DatabaseHelper {
             floor INTEGER NOT NULL
           )
         ''');
-        await _seedShelters(db);
+
+        // 4. 初期デモデータの投入
+        await _seedDemoShelters(db);
+
+        // 5. 事前計算経路テーブルとインデックスの作成
         await _createPrecomputedRoutes(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createPrecomputedRoutes(db);
         }
-        await _ensureHomeInfoColumns(db);
-      },
-      onOpen: (db) async {
-        await _ensureHomeInfoColumns(db);
       },
     );
   }
 
-  /// v2: 事前計算した避難経路(仕様書② §7)
+  /// v2の事前計算した避難経路テーブルの作成
   Future<void> _createPrecomputedRoutes(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS precomputed_routes (
@@ -92,37 +100,21 @@ class DatabaseHelper {
     ''');
   }
 
-  /// home_info テーブルに不足カラムがあれば追加する（スキーマ修復）
-  Future<void> _ensureHomeInfoColumns(Database db) async {
-    final columns = await db.rawQuery('PRAGMA table_info(home_info)');
-    final columnNames = columns.map((row) => row['name'] as String).toSet();
-
-    if (!columnNames.contains('address')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN address TEXT NOT NULL DEFAULT "未登録住所"');
-    }
-    if (!columnNames.contains('lat')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN lat REAL NOT NULL DEFAULT 35.7434');
-    }
-    if (!columnNames.contains('lon')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN lon REAL NOT NULL DEFAULT 139.8472');
-    }
-    if (!columnNames.contains('pmtiles_path')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN pmtiles_path TEXT NOT NULL DEFAULT ""');
-    }
-  }
-
-  /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
-  /// 座標・海抜・海岸距離はすべて仮の値。
-  Future<void> _seedShelters(Database db) async {
+  /// デモ用のダミー初期データ投入
+  Future<void> _seedDemoShelters(Database db) async {
     const shelters = [
       Shelter(
         shelterId: 'demo-0001',
-        name: '第一小学校（ダミー）',
-        lat: 35.750, lon: 139.848,
-        elevationM: 3, coastDistanceM: 9000,
-        types: 'earthquake,fire', capacity: 800,
+        name: '第一小学校（デモ用）',
+        lat: 35.750,
+        lon: 139.848,
+        elevationM: 3,
+        coastDistanceM: 9000,
+        types: 'earthquake,fire',
+        capacity: 800,
       ),
     ];
+    
     final batch = db.batch();
     for (final s in shelters) {
       batch.insert('shelters', s.toMap());
@@ -131,7 +123,7 @@ class DatabaseHelper {
   }
 
   // =====================================================================
-  // 💡 修正・適合させたメソッド群
+  // メソッド群（本番の仕様と完全同期・省略なし）
   // =====================================================================
 
   /// 自宅情報を取得する (getHomeInfo)
@@ -142,7 +134,6 @@ class DatabaseHelper {
   }
 
   /// 避難所一覧を取得する (getShelters)
-  /// 💡 Mapのリストから Shelter クラスのリストへ自動変換するように修正
   Future<List<Shelter>> getShelters() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('shelters');
@@ -150,7 +141,6 @@ class DatabaseHelper {
   }
 
   /// 家具診断の結果を保存する (insertDiagnosis)
-  /// 💡 引数で Diagnosis オブジェクトを直接受け取り、内部で .toMap() するように修正
   Future<int> insertDiagnosis(Diagnosis diagnosis) async {
     final db = await database;
     return await db.insert(
@@ -160,16 +150,14 @@ class DatabaseHelper {
     );
   }
 
-  // =====================================================================
-  // 既存のメソッド
-  // =====================================================================
-
+  /// 家具診断履歴を取得する (getDiagnoses)
   Future<List<Diagnosis>> getDiagnoses() async {
     final db = await database;
     final rows = await db.query('diagnoses', orderBy: 'id DESC');
     return rows.map(Diagnosis.fromMap).toList();
   }
 
+  /// 自宅情報を保存するベースメソッド (saveHomeInfo)
   Future<void> saveHomeInfo({
     required String structure,
     required int floor,
@@ -194,7 +182,7 @@ class DatabaseHelper {
     );
   }
 
-  // 🎯 復活：自宅登録画面から位置情報とPMTilesパスを保存する用
+  /// 自宅登録画面から位置情報とPMTilesパスを保存する用 (saveHomeMapInfo)
   Future<void> saveHomeMapInfo({
     required String address,
     required double lat,
@@ -213,6 +201,7 @@ class DatabaseHelper {
     );
   }
 
+  /// マップ情報付きの自宅情報を取得する (getHomeMapInfo)
   Future<Map<String, dynamic>?> getHomeMapInfo() async {
     final db = await database;
     final rows = await db.query('home_info', where: 'id = 1');
