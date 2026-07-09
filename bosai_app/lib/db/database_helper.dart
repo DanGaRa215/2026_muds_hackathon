@@ -21,7 +21,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'bosai_app.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE shelters(
@@ -53,8 +53,37 @@ class DatabaseHelper {
           )
         ''');
         await _seedShelters(db);
+        await _createPrecomputedRoutes(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createPrecomputedRoutes(db);
+        }
       },
     );
+  }
+
+  /// v2: 事前計算した避難経路(仕様書② §7)
+  Future<void> _createPrecomputedRoutes(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS precomputed_routes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shelter_id TEXT NOT NULL,
+        disaster_mode TEXT NOT NULL,     -- 'earthquake' | 'flood'
+        weight_profile TEXT NOT NULL,    -- 'fastest' | 'balanced' | 'safest'
+        distance_m REAL NOT NULL,
+        penalty_m REAL NOT NULL,
+        est_minutes REAL NOT NULL,
+        safety_score REAL NOT NULL,
+        used_fallback INTEGER NOT NULL DEFAULT 0,
+        geometry TEXT NOT NULL,          -- [[lat,lon],...] JSON
+        computed_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_pre_mode_profile
+        ON precomputed_routes(disaster_mode, weight_profile)
+    ''');
   }
 
   /// ダミー避難所データ（メンバーDの実DB＝国土数値情報ベースに差し替え予定）
