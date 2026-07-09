@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async'; // 💡 デバッグ用のタイマーのために追加
 
 import 'db/database_helper.dart';
-import 'screens/home_screen.dart'; 
+import 'db/shelter_database.dart';
+import 'screens/home_screen.dart';
 import 'services/eew_manager.dart'; // 💡 EEWマネージャーを読み込む
 
 Future<void> main() async {
@@ -10,6 +11,7 @@ Future<void> main() async {
   
   // DB初期化
   await DatabaseHelper.instance.database;
+  await ShelterDatabase.instance;
 
   // 📡 【デバッグ】アプリ起動と同時に、バックグラウンドでWebSocketに接続する
   EewManager().connect(useSandbox: true);
