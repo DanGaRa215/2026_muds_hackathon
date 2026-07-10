@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../db/database_helper.dart';
 import '../models/diagnosis.dart';
+import 'history_detail_screen.dart';
 
 /// 診断履歴一覧（設計書 §3【平常時】[備えチェック]）
 class HistoryScreen extends StatelessWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.diagnosesFuture});
+
+  /// テスト注入用。本番では null のまま DB から読み込む。
+  final Future<List<Diagnosis>>? diagnosesFuture;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('診断履歴')),
       body: FutureBuilder<List<Diagnosis>>(
-        future: DatabaseHelper.instance.getDiagnoses(),
+        future: diagnosesFuture ?? DatabaseHelper.instance.getDiagnoses(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -27,6 +31,9 @@ class HistoryScreen extends StatelessWidget {
             itemBuilder: (context, i) {
               final d = items[i];
               final date = d.createdAt.split('T').first;
+              final summary = d.comment.length > 48
+                  ? '${d.comment.substring(0, 48)}…'
+                  : d.comment;
               return ListTile(
                 leading: Icon(
                   switch (d.riskLevel) {
@@ -42,8 +49,16 @@ class HistoryScreen extends StatelessWidget {
                 ),
                 title: Text('${d.riskLevel}（$date）'),
                 subtitle: Text(
-                    '想定: ${d.intensity} / 固定: ${d.fixations.isEmpty ? "なし" : d.fixations}\n${d.comment}'),
+                  '想定: ${d.intensity} / 構造: ${d.fixations.isEmpty ? "未記録" : d.fixations}\n$summary\nタップで詳細',
+                ),
                 isThreeLine: true,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => HistoryDetailScreen(diagnosis: d),
+                    ),
+                  );
+                },
               );
             },
           );
