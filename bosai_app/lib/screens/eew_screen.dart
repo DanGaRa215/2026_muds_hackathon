@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'status_check_screen.dart';
+import 'shelter_card_screen.dart';
 
 /// 身を守る画面（設計書 §3【発生時】の先頭）
 ///
@@ -43,7 +43,9 @@ class _EewScreenState extends State<EewScreen> {
   void _goNext() {
     if (!mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SituationCheckPage()),
+      MaterialPageRoute(
+        builder: (_) => const ShelterProposalPage(situation: <String>{}),
+      ),
     );
   }
 

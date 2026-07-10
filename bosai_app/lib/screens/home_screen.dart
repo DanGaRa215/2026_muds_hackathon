@@ -4,9 +4,11 @@ import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'map_spike_screen.dart';
 import 'furniture_diagnosis_ui_screen.dart';
+import 'package:bosai_app/db/database_helper.dart';
 import 'package:bosai_app/screens/demo_map_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
-import 'package:bosai_app/main.dart';
+import 'package:bosai_app/screens/demo_address_geocoding_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -101,10 +103,45 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _DailyDashboardPage extends StatelessWidget {
+class _DailyDashboardPage extends StatefulWidget {
   final bool isDemoMode;
 
   const _DailyDashboardPage({this.isDemoMode = false});
+
+  @override
+  State<_DailyDashboardPage> createState() => _DailyDashboardPageState();
+}
+
+class _DailyDashboardPageState extends State<_DailyDashboardPage> {
+  static const Color _textColor = Color(0xFF300808);
+
+  late Future<bool> _hasRegisteredHomeFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasRegisteredHomeFuture = _hasRegisteredHome();
+  }
+
+  Future<bool> _hasRegisteredHome() async {
+    return await DatabaseHelper.instance.getRegisteredHome() != null;
+  }
+
+  Future<void> _openAddressRegistration() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => widget.isDemoMode
+            ? const DemoAddressGeocodingScreen()
+            : const AddressGeocodingScreen(),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _hasRegisteredHomeFuture = _hasRegisteredHome();
+    });
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -115,8 +152,9 @@ class _DailyDashboardPage extends StatelessWidget {
     final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
 
     return Scaffold(
-      backgroundColor: currentBgColor,
-      appBar: isDemoMode
+      backgroundColor: const Color(0xFFE7FBF0),
+      appBar: widget.isDemoMode
+
           ? AppBar(
               backgroundColor: Colors.amber.shade700,
               foregroundColor: Colors.white,
@@ -136,9 +174,10 @@ class _DailyDashboardPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
-                    style: TextStyle(
-                        color: currentTextColor,
+                    widget.isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
+                    style: const TextStyle(
+                        color: _textColor,
+
                         fontSize: 22,
                         fontWeight: FontWeight.bold),
                   ),
@@ -161,7 +200,10 @@ class _DailyDashboardPage extends StatelessWidget {
                         icon: Icons.map,
                         label: '避難準備（マップDL）',
                         onTap: () {
-                          if (isDemoMode) {
+
+                          if (widget.isDemoMode) {
+                            // デモモード時は新設した専用マップ画面へジャンプ
+
                             _push(context, const DemoMapScreen());
                           } else {
                             _push(context, const MapSpikeScreen());
@@ -173,16 +215,21 @@ class _DailyDashboardPage extends StatelessWidget {
                         label: '家具の診断履歴',
                         onTap: () => _push(context, const HistoryScreen()),
                       ),
-                      _DailyMenuCardButton(
-                        icon: Icons.home_work,
-                        label: '自宅の住所登録',
-                        onTap: () =>
-                            _push(context, const AddressGeocodingScreen()),
+                      FutureBuilder<bool>(
+                        future: _hasRegisteredHomeFuture,
+                        builder: (context, snapshot) {
+                          final hasRegisteredHome = snapshot.data ?? false;
+                          return _DailyMenuCardButton(
+                            icon: Icons.home_work,
+                            label: hasRegisteredHome ? '自宅住所の変更' : '自宅の住所登録',
+                            onTap: _openAddressRegistration,
+                          );
+                        },
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  if (isDemoMode)
+                  if (widget.isDemoMode)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red.shade900,
