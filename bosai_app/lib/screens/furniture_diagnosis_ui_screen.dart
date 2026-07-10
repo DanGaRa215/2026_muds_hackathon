@@ -251,6 +251,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
             {
               'action': 'add_l_bracket',
               'text': 'L字金具の設置を推奨。実調査では転倒率33.5%→8.9%（約1/4）に下がっています。',
+
               'source': 'TFD-H',
               'priority': 40,
             },
@@ -382,14 +383,30 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 💡 テーマ設定（ライト/ダーク）を動的にキャッチ
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 🎨 モードに応じてカラーパレットを切り替え
+    final currentBgColor = isDark ? theme.colorScheme.background : const Color(0xFFF5F0E8);
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     final payload = _payload;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F0E8),
+      backgroundColor: currentBgColor,
       appBar: AppBar(
         title: const Text('AI家具安全診断'),
-        backgroundColor: const Color(0xFFF5F0E8),
-        foregroundColor: const Color(0xFF300808),
+        backgroundColor: currentBgColor,
+        foregroundColor: currentTextColor,
+        elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'ホームへ戻る',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -406,12 +423,16 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               _buildDemoModeSection(),
               const SizedBox(height: 12),
               FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark ? theme.colorScheme.primary : const Color(0xFF300808),
+                  foregroundColor: isDark ? theme.colorScheme.onPrimary : Colors.white,
+                ),
                 onPressed: _isLoading ? null : _runDiagnosis,
                 icon: _isLoading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.analytics_outlined),
                 label: Text(_isLoading ? '判定中（最大2分）...' : '診断する'),
@@ -427,13 +448,13 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               const SizedBox(height: 12),
               _buildEnvNote(),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'これはあくまでAIの提案です。',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF5A463C),
+                  color: isDark ? theme.colorScheme.onBackground.withOpacity(0.7) : const Color(0xFF5A463C),
                 ),
               ),
             ],
@@ -482,7 +503,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           Text(
             '画像・補助入力・状態分岐をまとめたUIです。判定根拠はバックエンドに寄せ、UIは結果の描画に専念します。',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.88),
+              color: Colors.white.withOpacity(0.88),
               height: 1.4,
             ),
           ),
@@ -540,9 +561,9 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               height: 180,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08)),
               ),
               child: const Text('ここに選択した画像が表示されます'),
             ),
@@ -553,6 +574,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   }
 
   Widget _buildInputSection() {
+    final theme = Theme.of(context);
     return _SectionCard(
       title: '補助入力',
       subtitle: '建物情報はUIで補助的に入力します。',
@@ -560,7 +582,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<String>(
-            initialValue: _structure,
+            value: _structure,
             decoration: const InputDecoration(labelText: '建物構造'),
             items: const [
               DropdownMenuItem(value: 'wood', child: Text('木造')),
@@ -571,7 +593,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<int>(
-            initialValue: _floorNo,
+            value: _floorNo,
             decoration: const InputDecoration(labelText: '階数'),
             items: List.generate(
               20,
@@ -593,7 +615,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           const SizedBox(height: 8),
           Text(
             '表示値: ${_structureLabel(_structure)} / $_floorNo階 / 免震${_baseIsolated ? 'あり' : 'なし'}',
-            style: TextStyle(color: Colors.black.withValues(alpha: 0.62)),
+            style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.62)),
           ),
         ],
       ),
@@ -638,9 +660,9 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
+        border: Border.all(color: color.withOpacity(0.28)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -714,6 +736,25 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         DiagnosisUnknownsCard(unknowns: unknowns),
         const SizedBox(height: 12),
         DiagnosisSourcesCard(sources: sources),
+
+        _UnknownsCard(unknowns: unknowns),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('戻る'),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          ),
+          onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          icon: const Icon(Icons.home_outlined),
+          label: const Text('ホームへ戻る'),
+        ),
+
       ],
     );
   }
@@ -724,6 +765,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       isLoading: _isLoading,
       onRetry: _runDiagnosis,
       onPickImage: () => _pickImage(ImageSource.gallery),
+
     );
   }
 
@@ -740,7 +782,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       usingDemo
           ? '開発時は --dart-define=API_BASE_URL=... --dart-define=APP_KEY=... で接続情報を注入できます。'
           : '接続情報は dart-define から読み取っています。',
-      style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55), fontSize: 12),
     );
   }
 }
@@ -758,15 +800,18 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface, // 白固定からテーマのサーフェス色へ
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -777,12 +822,12 @@ class _SectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
           ),
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: TextStyle(color: Colors.black.withValues(alpha: 0.62)),
+            style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.62)),
           ),
           const SizedBox(height: 14),
           child,
@@ -802,9 +847,9 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
+        color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
       ),
       child: Text(
         label,

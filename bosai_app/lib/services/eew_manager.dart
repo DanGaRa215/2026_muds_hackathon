@@ -16,7 +16,7 @@ class EewManager {
   bool _isConnecting = false;
   int _reconnectDelaySeconds = 1;
   bool _shouldReconnect = true;
-  
+
   final Set<String> _processedIds = {};
   final String targetPrefecture = "東京都";
   final int minScaleThreshold = 10; // 震度1以上
@@ -35,10 +35,10 @@ class EewManager {
   void _addLog(String message) {
     final timestamp = DateTime.now().toString().substring(11, 19);
     final logMessage = '[$timestamp] $message';
-    
-    // 💡 ターミナル上で絶対に見逃さないように、目立つプレフィックスをつけて print 出力！
-    print('🟢 [EEW_LOG] $logMessage');
-    
+
+    // 💡 ターミナル上で絶対に見逃さないように、目立つプレフィックスをつけて出力！
+    debugPrint('🟢 [EEW_LOG] $logMessage');
+
     // UI側のデバッグ画面にも送る
     _logController.add(logMessage);
   }
@@ -58,7 +58,7 @@ class EewManager {
       _isConnecting = false;
       _statusController.add(true);
       _addLog('✅ 接続に成功しました');
-      
+
       _channel!.stream.listen(
         (message) {
           _resetReconnectDelay();
@@ -121,7 +121,7 @@ class EewManager {
       final int code = data['code'] ?? 0;
       final String time = data['time'] ?? '不明';
 
-      _addLog('📥 データ受信 [Code: $code / ID: $id]');
+      _addLog('📥 データ受信 [Code: $code / ID: $id / Time: $time]');
 
       if (id != null) {
         if (_processedIds.contains(id)) {
@@ -157,7 +157,7 @@ class EewManager {
   void _processCode556(Map<String, dynamic> data) {
     final List<dynamic> areas = data['areas'] ?? [];
     _addLog('   - 解析中: エリア件数 ${areas.length}件');
-    
+
     bool shouldNotify = false;
     String matchedAreaName = "";
 
@@ -188,7 +188,7 @@ class EewManager {
   void _processCode551(Map<String, dynamic> data) {
     final List<dynamic> points = data['points'] ?? [];
     _addLog('   - 解析中: 震度観測点件数 ${points.length}件');
-    
+
     bool shouldNotify = false;
     int maxScale = 0;
 

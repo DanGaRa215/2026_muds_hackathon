@@ -52,8 +52,8 @@ CREATE TABLE edges (
   elevation_m REAL,                -- エッジ中点の標高(m)
   geometry TEXT NOT NULL           -- 描画用座標列 [[lat,lon],[lat,lon],...] のJSON文字列
 );
-CREATE INDEX idx_edges_from ON edges(from_node);
-CREATE INDEX idx_edges_to ON edges(to_node);
+-- edges(from_node/to_node) の検索用indexはアプリ実行時に使わないため作らない。
+-- アプリは起動時に edges 全件を読み込み、Dart 側のインメモリグラフで探索する。
 
 CREATE TABLE shelters (
   shelter_id TEXT PRIMARY KEY,     -- 元データの施設ID。無ければ 'koto-0001' 形式で採番
@@ -276,8 +276,8 @@ def verify() -> bool:
     # 9. ファイルサイズ
     size_bytes = DB_PATH.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    add(9, "routing.db ≤200MB", size_bytes <= 200 * 1024 * 1024,
-        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤200MB")
+    add(9, "routing.db ≤95MB", size_bytes <= 95 * 1024 * 1024,
+        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤95MB")
 
     conn.close()
 
