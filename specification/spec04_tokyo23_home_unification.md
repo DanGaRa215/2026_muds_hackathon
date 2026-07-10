@@ -69,7 +69,7 @@
 |---|---:|---|
 | `bosai_app/assets/tokyo23_buffered.pmtiles` | 68MB、東京都全域 zoom 10-16 | 対応可 |
 | `bosai_app/assets/shelters.db` | 2,179件、23区全区 | 対応可 |
-| `bosai_app/assets/routing.db` | 108.6MB、479,627 nodes、703,264 edges | 対応済み |
+| `bosai_app/assets/routing.db` | 89.9MB、479,627 nodes、703,264 edges | 対応済み |
 | routing.db meta bbox | lat 35.468135-35.831014 / lon 139.546313-139.935467 | 23区+1.5kmバッファ |
 | routing.db shelters | 2,179件、nearest_node不整合0件 | 対応済み |
 
@@ -160,7 +160,8 @@ lon 139.55-139.93
 - `preprocess/01_fetch_osm.py`: Nominatimで東京23区各区の行政界を取得し、union + 1.5kmバッファでOSM道路網と水域を取得する
 - `preprocess/04_build_shelters.py`: `bosai_app/assets/shelters.db` から `city_code IN 13101..13123` を抽出する
 - `nearest_node`: 東京23区版ノードSTRtreeで全避難所分を再計算する
-- `05_write_db.py`: 23区サイズの受け入れ条件、23区東西2系統の経路検証、200MB以下のサイズ検証を行う
+- `05_write_db.py`: 23区サイズの受け入れ条件、23区東西2系統の経路検証、95MB以下のサイズ検証を行う
+- `edges(from_node/to_node)` の検索用indexは、アプリが起動時に全edgesをメモリグラフ化するためassetには含めない
 - 生成後の `preprocess/output/routing.db` を `bosai_app/assets/routing.db` へ差し替える
 - `RoutingDatabase._assetRevision` を更新し、既存端末ローカルコピーを再展開させる
 
@@ -224,7 +225,7 @@ lon 139.55-139.93
    - shelters=2,179 / nearest_node不整合=0
    - 西葛西〜船堀 2,507m
    - 三軒茶屋〜新宿 6,966m
-   - DBサイズ 108.6MB
+   - DBサイズ 89.9MB
 
 ### 11.2 手動シナリオ
 
@@ -242,7 +243,7 @@ lon 139.55-139.93
 
 ### 12.1 リスク
 
-- `routing.db` が108.6MBに増えるため、アプリ初回展開とグラフロード時間が増える
+- `routing.db` が89.9MBに増えるため、アプリ初回展開とグラフロード時間が増える
 - 23区避難所2,179件のうち、routing語彙の `types` が空の行が1,220件ある。既存ロジックではルート候補から除外される
 - 23区 bbox は近似であり、境界近傍で誤受入れが起こり得る。デモ用途の制約として許容する
 - 300mスナップに失敗する地点では、23区内でも経路線を出せない。縮退ビューで安全に処理する
@@ -253,7 +254,7 @@ lon 139.55-139.93
 実装中に以下が判明した場合は作業を停止し、差分と判断材料を報告する。
 
 - `routing.db` の東京23区生成がOverpass・メモリ・サイズ制約で完走できない
-- `routing.db` が200MBを超え、`--geom-decimals 5` でも収まらない
+- `routing.db` が95MBを超え、`--geom-decimals 5` と未使用index除外でも収まらない
 - `home_info` スキーマや既存保存フローが本仕様と異なる
 - `DemoDatabaseHelper` に `home_info` 以外の生きた用途が見つかる
 - 本PRの主目的を超えるレビュー指摘や追加依頼が入る
@@ -265,5 +266,5 @@ lon 139.55-139.93
 - `preprocess/.venv/bin/python run_all.py --force --geom-decimals 5`
 - 検証日時: 2026-07-10T01:39:16.466656+00:00
 - 総合判定: 全て合格
-- `routing.db`: 108.6MB / 479,627 nodes / 703,264 edges / shelters 2,179
+- `routing.db`: 89.9MB / 479,627 nodes / 703,264 edges / shelters 2,179
 - 経路検証: 西葛西〜船堀 2,507m、三軒茶屋〜新宿 6,966m

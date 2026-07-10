@@ -80,7 +80,7 @@ python3.12 -m venv .venv          # Python 3.11+
 <!-- ACCEPTANCE_RESULTS:BEGIN -->
 
 - 検証日時: 2026-07-10T01:39:16.466656+00:00
-- DB: `/Users/reo_huk/2026muds/2026_muds_hackathon/preprocess/output/routing.db` (108.6 MB)
+- DB: `/Users/reo_huk/2026muds/2026_muds_hackathon/preprocess/output/routing.db` (89.9 MB)
 - 総合判定: **全て合格**
 
 | # | 受け入れ条件 | 基準 | 実測値 | 判定 |
@@ -93,7 +93,7 @@ python3.12 -m venv .venv          # Python 3.11+
 | 6 | shelters ≥2,000件 かつ nearest_node 実在 | ≥2,000件 / JOIN不整合=0 | shelters=2179, nearest_node不整合=0 | ✅ PASS |
 | 7 | shelters.types がrouting語彙と整合 | 語彙は earthquake,fire,flood,surge のみ / 種別付き・flood/surge が1件以上 | empty=1220, invalid=なし, flood/surge=673, distribution=(empty):1220, earthquake:178, earthquake,fire:104, earthquake,fire,flood:116, earthquake,flood:131, earthquake,flood,surge:85, earthquake,surge:18, fire:4, flood:136, flood,surge:187 | ✅ PASS |
 | 8 | 東西2系統の最短経路が妥当 | 西葛西〜船堀 1,500〜6,000m / 三軒茶屋〜新宿 4,000〜10,000m | 西葛西駅〜船堀駅: 2,507m (nodes 6183709275→4210150308) / 三軒茶屋駅〜新宿駅: 6,966m (nodes 8367910234→11965354256) | ✅ PASS |
-| 9 | routing.db ≤200MB | ≤200MB | 108.6MB (113,889,280 bytes) | ✅ PASS |
+| 9 | routing.db ≤95MB | ≤95MB | 89.9MB (94,240,768 bytes) | ✅ PASS |
 
 <!-- ACCEPTANCE_RESULTS:END -->
 

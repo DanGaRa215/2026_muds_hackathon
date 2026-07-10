@@ -1,7 +1,7 @@
 {
   "verified_at": "2026-07-10T01:39:16.466656+00:00",
   "db_path": "/Users/reo_huk/2026muds/2026_muds_hackathon/preprocess/output/routing.db",
-  "db_size_bytes": 113889280,
+  "db_size_bytes": 94240768,
   "all_passed": true,
   "checks": [
     {
@@ -62,10 +62,10 @@
     },
     {
       "no": 9,
-      "name": "routing.db ≤200MB",
+      "name": "routing.db ≤95MB",
       "passed": true,
-      "measured": "108.6MB (113,889,280 bytes)",
-      "criterion": "≤200MB"
+      "measured": "89.9MB (94,240,768 bytes)",
+      "criterion": "≤95MB"
     }
   ]
 }

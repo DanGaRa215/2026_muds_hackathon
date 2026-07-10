@@ -92,7 +92,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
           const SizedBox(height: 8),
           // 想定震度
           DropdownButtonFormField<String>(
-            value: _intensity,
+            initialValue: _intensity,
             decoration: const InputDecoration(labelText: '想定震度'),
             items: ['震度5弱', '震度5強', '震度6弱', '震度6強', '震度7']
                 .map((v) => DropdownMenuItem(value: v, child: Text(v)))
@@ -129,7 +129,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> {
           if (_result != null) ...[
             const SizedBox(height: 16),
             Card(
-              color: _riskColor(_result!.riskLevel).withOpacity(0.1),
+              color: _riskColor(_result!.riskLevel).withValues(alpha: 0.1),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(

@@ -43,8 +43,8 @@ CREATE TABLE edges (
   elevation_m REAL,                -- エッジ中点の標高(m)
   geometry TEXT NOT NULL           -- 描画用座標列 [[lat,lon],[lat,lon],...] のJSON文字列
 );
-CREATE INDEX idx_edges_from ON edges(from_node);
-CREATE INDEX idx_edges_to ON edges(to_node);
+-- edges(from_node/to_node) の検索用indexはアプリ実行時に使わないため作らない。
+-- アプリは起動時に edges 全件を読み込み、Dart 側のインメモリグラフで探索する。
 
 CREATE TABLE shelters (
   shelter_id TEXT PRIMARY KEY,     -- 元データの施設ID。無ければ 'koto-0001' 形式で採番
@@ -178,7 +178,7 @@ preprocess/
 5. `is_bridge=1` のエッジが **50本以上**(江戸川区は大河川の橋梁と水路の小橋が多数。少なすぎたらタグ処理ミス)
 6. `shelters` が10件以上、全件の `nearest_node` が実在ノードを指す(JOIN検証)
 7. 検証探索: 西葛西駅(35.6647, 139.8586)と船堀駅(35.6837, 139.8646)それぞれの最近傍ノード間で、networkx の `shortest_path`(weight=length_m)が経路を返し、経路長が 1.5〜6.0 km に収まる
-8. `routing.db` のファイルサイズが 80MB 以下(assets同梱の現実性。超える場合は geometry の座標丸めを5桁に落として再生成)
+8. `routing.db` のファイルサイズが 80MB 以下(assets同梱の現実性。超える場合は geometry の座標丸めを5桁に落として再生成)。東京23区版ではGitHub通常Gitの100MB制限を避けるため95MB以下を上限とする
 9. 検証は `05_write_db.py` 内の自動チェックとして実装し、1つでも失敗したら非0で終了する
 
 ## 8. スコープ外(実装するな・書くな)
