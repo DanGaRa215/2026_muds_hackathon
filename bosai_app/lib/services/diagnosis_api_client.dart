@@ -21,7 +21,13 @@ class DiagnosisApiClient {
 
   static const int maxImageBytes = 5 * 1024 * 1024;
 
-  /// POST /detect — Vision検出のみ。タイムアウト30秒 [DESIGN v2.4]
+  /// Vision LLM の初回推論が遅い環境向けに v2.4 既定(30s)より延長。
+  static const Duration detectTimeout = Duration(seconds: 90);
+
+  /// ルールエンジンは通常数 ms だが、接続遅延の余裕を少し持たせる。
+  static const Duration diagnoseTimeout = Duration(seconds: 30);
+
+  /// POST /detect — Vision検出のみ。
   Future<Map<String, dynamic>> detect({
     required List<int> imageBytes,
     required String filename,
@@ -45,12 +51,11 @@ class DiagnosisApiClient {
         ),
       );
 
-    // Vision LLM の推論時間を含む。モデル評価の REQUEST_TIMEOUT=30.0 と揃える [DESIGN v2.4]
-    final streamed = await request.send().timeout(const Duration(seconds: 30));
+    final streamed = await request.send().timeout(detectTimeout);
     return _parseResponse(streamed);
   }
 
-  /// POST /diagnose — 編集済み detection JSON。タイムアウト15秒 [DESIGN]
+  /// POST /diagnose — 編集済み detection JSON。
   Future<Map<String, dynamic>> diagnoseFromDetection({
     required Map<String, dynamic> detection,
     required String structure,
@@ -67,8 +72,7 @@ class DiagnosisApiClient {
       ..fields['base_isolated'] = baseIsolated.toString()
       ..fields['detection'] = jsonEncode(detection);
 
-    // ルールエンジンのみで数msのため既定値を維持 [DESIGN]
-    final streamed = await request.send().timeout(const Duration(seconds: 15));
+    final streamed = await request.send().timeout(diagnoseTimeout);
     return _parseResponse(streamed);
   }
 
