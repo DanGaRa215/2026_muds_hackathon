@@ -9,6 +9,7 @@ import 'package:bosai_app/screens/demo_map_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
 import 'package:bosai_app/screens/demo_address_geocoding_screen.dart';
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,9 +18,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const Color _backgroundColor = Color(0xFFE7FBF0);
-  static const Color _textColor = Color(0xFF300808);
-
   int _currentIndex = 0;
 
   List<Widget> _getPages() {
@@ -35,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icons.map_outlined,
         description: '避難計画や地図ダウンロード画面をここに接続します。',
       ),
-      // アプリ設定タブから HomeScreen の Context を利用してデモ画面へ遷移させる
       _AppSettingsTabPage(onNavigateToDemo: () {
         _push(
             context,
@@ -48,8 +45,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 💡 テーマから現在のカラー情報を動的に取得
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // ダークモード時は暗めの背景、ライトモード時はこれまでの薄緑を適用
+    final currentBgColor = isDark ? theme.colorScheme.background : const Color(0xFFE7FBF0);
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: currentBgColor,
       body: SafeArea(
         child: IndexedStack(
           index: _currentIndex,
@@ -64,9 +69,9 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: _textColor,
-        unselectedItemColor: _textColor.withValues(alpha: 0.7),
-        backgroundColor: Colors.white,
+        selectedItemColor: isDark ? theme.colorScheme.primary : currentTextColor,
+        unselectedItemColor: (isDark ? theme.colorScheme.onSurface : currentTextColor).withValues(alpha: 0.6),
+        backgroundColor: theme.colorScheme.surface, // 白固定からテーマ連動に変更
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -136,11 +141,20 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
     });
   }
 
+
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final currentBgColor = isDark ? theme.colorScheme.background : const Color(0xFFE7FBF0);
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     return Scaffold(
       backgroundColor: const Color(0xFFE7FBF0),
       appBar: widget.isDemoMode
+
           ? AppBar(
               backgroundColor: Colors.amber.shade700,
               foregroundColor: Colors.white,
@@ -163,6 +177,7 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                     widget.isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
                     style: const TextStyle(
                         color: _textColor,
+
                         fontSize: 22,
                         fontWeight: FontWeight.bold),
                   ),
@@ -185,8 +200,10 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                         icon: Icons.map,
                         label: '避難準備（マップDL）',
                         onTap: () {
+
                           if (widget.isDemoMode) {
                             // デモモード時は新設した専用マップ画面へジャンプ
+
                             _push(context, const DemoMapScreen());
                           } else {
                             _push(context, const MapSpikeScreen());
@@ -246,29 +263,43 @@ class _AppSettingsTabPage extends StatelessWidget {
 
   const _AppSettingsTabPage({required this.onNavigateToDemo});
 
-  static const Color _textColor = Color(0xFF300808);
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'アプリ設定',
             style: TextStyle(
-                color: _textColor, fontSize: 24, fontWeight: FontWeight.bold),
+                color: currentTextColor, fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
 
-          // 東京23区デモ起動用のシンプルなListTileボタン
+          // 🌙 🎯 追加：ダークモード手動切り替えスイッチ
+          SwitchListTile(
+            title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(isDark ? 'ON (夜間モード適用中)' : 'OFF (標準モード適用中)'),
+            value: isDark,
+            secondary: Icon(isDark ? Icons.dark_mode : Icons.light_mode, color: theme.colorScheme.primary),
+            onChanged: (bool value) {
+              // スイッチを切り替えた瞬間に、main.dart経由で全画面のテーマが反転します
+              appThemeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
+            },
+          ),
+          const SizedBox(height: 16),
+
           ListTile(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Colors.grey.shade400, width: 1),
+              side: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade400, width: 1),
             ),
-            leading: const Icon(Icons.developer_mode, color: _textColor),
+            leading: Icon(Icons.developer_mode, color: currentTextColor),
             title: const Text('東京23区デモモードを起動',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -283,35 +314,39 @@ class _AppSettingsTabPage extends StatelessWidget {
 class _DailyMenuCardButton extends StatelessWidget {
   const _DailyMenuCardButton(
       {required this.icon, required this.label, required this.onTap});
-  static const Color _textColor = Color(0xFF300808);
+
   final IconData icon;
   final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: _textColor,
+        backgroundColor: theme.colorScheme.surface, // 自動で白かグレー反転
+        foregroundColor: currentTextColor,
         padding: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: _textColor, width: 2),
+          side: BorderSide(color: isDark ? theme.colorScheme.outline : currentTextColor, width: 2),
         ),
       ),
       onPressed: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 44),
+          Icon(icon, size: 44, color: isDark ? theme.colorScheme.primary : currentTextColor),
           const SizedBox(height: 14),
           Text(label,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: _textColor)),
+                  color: currentTextColor)),
         ],
       ),
     );
@@ -325,30 +360,34 @@ void _push(BuildContext context, Widget page) {
 class _PlaceholderTabPage extends StatelessWidget {
   const _PlaceholderTabPage(
       {required this.title, required this.icon, required this.description});
-  static const Color _textColor = Color(0xFF300808);
+
   final String title;
   final IconData icon;
   final String description;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: _textColor),
+            Icon(icon, size: 56, color: currentTextColor),
             const SizedBox(height: 16),
             Text(title,
-                style: const TextStyle(
-                    color: _textColor,
+                style: TextStyle(
+                    color: currentTextColor,
                     fontSize: 24,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(description,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: _textColor, fontSize: 16)),
+                style: TextStyle(color: currentTextColor, fontSize: 16)),
           ],
         ),
       ),
