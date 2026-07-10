@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 
@@ -12,6 +11,7 @@ import '../routing/precompute_service.dart';
 import '../routing/route_service.dart';
 import '../routing_bootstrap.dart';
 import '../services/home_area_service.dart';
+import '../services/location_service.dart';
 import 'prepare_screen.dart';
 
 class NaviScreen extends StatefulWidget {
@@ -21,12 +21,17 @@ class NaviScreen extends StatefulWidget {
     required this.mode,
     this.initialRoute,
     this.initialRouteSourceLabel = '候補選定時に計算',
+    this.originOverride,
   });
 
   final ShelterInfo shelter;
   final DisasterMode mode;
   final RouteResult? initialRoute;
   final String initialRouteSourceLabel;
+
+  /// 自宅未登録でも現在地起点でナビできるようにする起点座標
+  /// （現在地ベースのEEWデモ用）。
+  final LatLng? originOverride;
 
   @override
   State<NaviScreen> createState() => _NaviScreenState();
@@ -63,7 +68,8 @@ class _NaviScreenState extends State<NaviScreen> {
       );
       final routeService = await RoutingBootstrap.routeService();
       final precomputeService = PrecomputeService(routeService);
-      final homeLocation = _homeLocationFrom(homeInfo);
+      final homeLocation = widget.originOverride ?? _homeLocationFrom(homeInfo);
+      final allowPrecomputedRoute = widget.originOverride == null;
 
       LatLng? currentPosition;
       try {
@@ -92,6 +98,7 @@ class _NaviScreenState extends State<NaviScreen> {
                 homeLocation: homeLocation,
                 currentPosition: currentPosition,
                 profile: _selectedProfile,
+                allowPrecomputedRoute: allowPrecomputedRoute,
               );
       }
 
@@ -148,6 +155,7 @@ class _NaviScreenState extends State<NaviScreen> {
     required LatLng homeLocation,
     required LatLng? currentPosition,
     required WeightProfile profile,
+    required bool allowPrecomputedRoute,
   }) async {
     RouteResult? route;
     String? routeSourceLabel;
@@ -165,8 +173,10 @@ class _NaviScreenState extends State<NaviScreen> {
       }
     }
 
-    route ??= await _loadPrecomputedRoute(precomputeService, profile);
-    routeSourceLabel ??= route == null ? null : '自宅からの保存ルート';
+    if (allowPrecomputedRoute) {
+      route ??= await _loadPrecomputedRoute(precomputeService, profile);
+      routeSourceLabel ??= route == null ? null : '自宅からの保存ルート';
+    }
 
     if (route == null) {
       route = await routeService.findRoute(
@@ -200,6 +210,7 @@ class _NaviScreenState extends State<NaviScreen> {
         homeLocation: homeLocation,
         currentPosition: _currentPosition,
         profile: profile,
+        allowPrecomputedRoute: widget.originOverride == null,
       );
       if (!mounted) return;
       setState(() {
@@ -237,25 +248,7 @@ class _NaviScreenState extends State<NaviScreen> {
       _routeSourceLabelsByProfile[_selectedProfile];
 
   Future<LatLng?> _getCurrentLocation() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return null;
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return null;
-    }
-
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
-    );
-
-    return LatLng(position.latitude, position.longitude);
+    return LocationService.getCurrentLatLng();
   }
 
   double _distanceM(LatLng a, LatLng b) {

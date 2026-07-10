@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
+import '../services/location_service.dart';
+import 'eew_current_location_screen.dart';
 import 'eew_screen.dart';
 import 'history_screen.dart';
 import 'map_spike_screen.dart';
@@ -122,6 +124,13 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
   void initState() {
     super.initState();
     _hasRegisteredHomeFuture = _hasRegisteredHome();
+    if (widget.isDemoMode) {
+      // デモ起動時に位置情報権限を先に済ませておく
+      // （EEW発火時に権限ダイアログでブロックしないため）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        LocationService.ensurePermission();
+      });
+    }
   }
 
   Future<bool> _hasRegisteredHome() async {
@@ -230,7 +239,7 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  if (widget.isDemoMode)
+                  if (widget.isDemoMode) ...[
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red.shade900,
@@ -249,6 +258,27 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                             builder: (_) => const EewScreen()),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepOrange.shade800,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      icon: const Icon(Icons.my_location, size: 24),
+                      label: const Text('デモ実行：EEWを発災（現在地から避難）',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15)),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) =>
+                                const EewCurrentLocationScreen()),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
