@@ -162,8 +162,8 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
       backgroundColor: currentBgColor, // 👈 ⭕ 修正：明るい色の固定を解除
       appBar: widget.isDemoMode
           ? AppBar(
-              backgroundColor: Colors.amber.shade700,
-              foregroundColor: Colors.white,
+              backgroundColor: currentBgColor,
+              foregroundColor: currentTextColor,
               title: const Text('東京23区デモ画面',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               centerTitle: true,
