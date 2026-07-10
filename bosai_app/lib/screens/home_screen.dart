@@ -9,7 +9,7 @@ import 'package:bosai_app/db/database_helper.dart';
 import 'package:bosai_app/screens/demo_map_screen.dart';
 import 'package:bosai_app/screens/address_geocoding_screen.dart';
 import 'package:bosai_app/screens/demo_address_geocoding_screen.dart';
-
+import 'package:bosai_app/main.dart'; // 💡 appThemeNotifier を参照するためにインポート
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -114,8 +114,6 @@ class _DailyDashboardPage extends StatefulWidget {
 }
 
 class _DailyDashboardPageState extends State<_DailyDashboardPage> {
-  static const Color _textColor = Color(0xFF300808);
-
   late Future<bool> _hasRegisteredHomeFuture;
 
   @override
@@ -142,20 +140,18 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
     });
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    // 💡 修正：固定値を取り除き、テーマ連動カラーに変更
     final currentBgColor = isDark ? theme.colorScheme.background : const Color(0xFFE7FBF0);
     final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE7FBF0),
+      backgroundColor: currentBgColor, // 👈 ⭕ 修正：明るい色の固定を解除
       appBar: widget.isDemoMode
-
           ? AppBar(
               backgroundColor: Colors.amber.shade700,
               foregroundColor: Colors.white,
@@ -176,9 +172,8 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                 children: [
                   Text(
                     widget.isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
-                    style: const TextStyle(
-                        color: _textColor,
-
+                    style: TextStyle(
+                        color: currentTextColor, // 👈 ⭕ 修正：ダークモード対応のテキスト色に連動
                         fontSize: 22,
                         fontWeight: FontWeight.bold),
                   ),
@@ -201,10 +196,7 @@ class _DailyDashboardPageState extends State<_DailyDashboardPage> {
                         icon: Icons.map,
                         label: '避難準備（マップDL）',
                         onTap: () {
-
                           if (widget.isDemoMode) {
-                            // デモモード時は新設した専用マップ画面へジャンプ
-
                             _push(context, const DemoMapScreen());
                           } else {
                             _push(context, const MapSpikeScreen());
@@ -289,7 +281,6 @@ class _AppSettingsTabPage extends StatelessWidget {
             value: isDark,
             secondary: Icon(isDark ? Icons.dark_mode : Icons.light_mode, color: theme.colorScheme.primary),
             onChanged: (bool value) {
-              // スイッチを切り替えた瞬間に、main.dart経由で全画面のテーマが反転します
               appThemeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
             },
           ),
