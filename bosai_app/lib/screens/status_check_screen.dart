@@ -65,7 +65,18 @@ class _SituationCheckPageState extends State<SituationCheckPage> {
         backgroundColor: _backgroundColor,
         foregroundColor: _textColor,
         title: const Text('周囲の状況確認'),
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: '戻る',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'ホームへ戻る',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(

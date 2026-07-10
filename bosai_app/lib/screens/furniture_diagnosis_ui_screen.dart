@@ -434,6 +434,13 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         title: const Text('AI家具安全診断'),
         backgroundColor: const Color(0xFFF5F0E8),
         foregroundColor: const Color(0xFF300808),
+        actions: [
+          IconButton(
+            tooltip: 'ホームへ戻る',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -755,6 +762,18 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         ),
         const SizedBox(height: 12),
         _UnknownsCard(unknowns: unknowns),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('戻る'),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          icon: const Icon(Icons.home_outlined),
+          label: const Text('ホームへ戻る'),
+        ),
       ],
     );
   }
