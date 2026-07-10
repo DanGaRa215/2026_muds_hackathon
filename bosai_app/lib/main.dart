@@ -8,7 +8,7 @@ import 'services/eew_manager.dart'; // 💡 EEWマネージャーを読み込む
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // DB初期化
   await DatabaseHelper.instance.database;
   await ShelterDatabase.instance;
@@ -19,10 +19,10 @@ Future<void> main() async {
   // 🚀 【デバッグ】ターミナル検証用：アプリ起動の5秒後に自動でモックデータを注入する
   // （※ターミナル上でログを確認するための仕掛けです。本番ではこのTimer処理は削除します）
   Timer(const Duration(seconds: 5), () {
-    print('🟢 [EEW_LOG] ⏰ タイマー発動：モックデータを注入します');
+    debugPrint('🟢 [EEW_LOG] ⏰ タイマー発動：モックデータを注入します');
     EewManager().injectMockEewAlarm();
   });
-  
+
   runApp(const BosaiApp());
 }
 

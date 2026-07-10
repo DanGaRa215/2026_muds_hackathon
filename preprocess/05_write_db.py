@@ -52,8 +52,8 @@ CREATE TABLE edges (
   elevation_m REAL,                -- エッジ中点の標高(m)
   geometry TEXT NOT NULL           -- 描画用座標列 [[lat,lon],[lat,lon],...] のJSON文字列
 );
-CREATE INDEX idx_edges_from ON edges(from_node);
-CREATE INDEX idx_edges_to ON edges(to_node);
+-- edges(from_node/to_node) の検索用indexはアプリ実行時に使わないため作らない。
+-- アプリは起動時に edges 全件を読み込み、Dart 側のインメモリグラフで探索する。
 
 CREATE TABLE shelters (
   shelter_id TEXT PRIMARY KEY,     -- 元データの施設ID。無ければ 'koto-0001' 形式で採番
