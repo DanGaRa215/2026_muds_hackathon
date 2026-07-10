@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/shelter.dart';
+import 'coastal_logic.dart';
 
 /// 避難所推薦ロジック【メンバーB担当領域】
 ///
@@ -22,8 +23,12 @@ class ShelterRecommender {
       var sc = d;
       if (situation.contains('tsunami')) {
         // 津波時: 海抜が高く・海岸から遠いほど優先（沿岸部優先ルールの仮実装）
-        sc = d * 0.5 - s.elevationM * 500 - s.coastDistanceM * 0.2;
-        if (!s.supports('tsunami')) sc += 100000; // 津波非対応は大幅減点
+        sc = d * kSurgeDistanceWeight -
+            s.elevationM * kSurgeElevationWeight -
+            s.coastDistanceM * kSurgeCoastDistanceWeight;
+        if (!s.supports('tsunami')) {
+          sc += kSurgeUnsupportedPenalty;
+        }
       }
       if (situation.contains('fire') && !s.supports('fire')) {
         sc += 50000; // 火災時は火災対応外を後回し

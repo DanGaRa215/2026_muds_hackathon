@@ -1,17 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 // 🎯 修正点①：DBから登録情報を引っ張ってくるためにインポート
 import '../db/database_helper.dart';
-import '../services/home_area_service.dart';
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 
 class MapSpikeScreen extends StatefulWidget {
   const MapSpikeScreen({super.key});
@@ -45,23 +40,16 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
 
       if (homeInfo != null) {
         // DBにデータがある場合は、登録された「正確な緯度経度」と「PMTilesのパス」を使用
-        var targetPath = homeInfo['pmtiles_path'].toString();
+        final targetPath = homeInfo['pmtiles_path'].toString();
         targetLatLng = LatLng(
           (homeInfo['lat'] as num).toDouble(),
           (homeInfo['lon'] as num).toDouble(),
         );
-        if (targetPath.isEmpty) {
-          targetPath =
-              await _copyAssetToLocal(HomeAreaService.tokyo23PmtilesAsset);
-        }
-
-        final file = File(targetPath);
-        if (!await file.exists()) {
-          throw Exception("保存されたオフライン地図ファイルが見つかりません。再ダウンロードが必要です。");
-        }
 
         // タイルプロバイダを作成
-        final provider = await PmTilesVectorTileProvider.fromSource(targetPath);
+        final provider = await loadOfflineMapTileProvider(
+          preferredPath: targetPath,
+        );
 
         if (mounted) {
           setState(() {
@@ -82,91 +70,6 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
         });
       }
     }
-  }
-
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-    if (!await file.exists() || file.lengthSync() == 0) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
-    }
-    return file.path;
-  }
-
-  // レイヤー名を網羅してすり抜けを防ぐTheme定義
-  vtr.Theme _buildOfflineMapTheme() {
-    final knownLayers = [
-      'water',
-      'building',
-      'roads',
-      'road',
-      'landuse',
-      'transportation',
-      'waterway',
-      'structure'
-    ];
-
-    final List<Map<String, dynamic>> styleLayers = [
-      {
-        'id': 'background',
-        'type': 'background',
-        'paint': {
-          'background-color': '#f2efe9',
-        },
-      }
-    ];
-
-    for (final layerName in knownLayers) {
-      if (layerName.contains('water')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#ccdff0'}
-        });
-      } else if (layerName.contains('building') ||
-          layerName.contains('structure')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#dedede', 'fill-outline-color': '#cccccc'}
-        });
-      } else if (layerName.contains('landuse')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#e1ebd5'}
-        });
-      } else {
-        styleLayers.add({
-          'id': 'layer-$layerName-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'line-color': '#4a90d9', 'line-width': 1.8}
-        });
-      }
-    }
-
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': styleLayers,
-    });
   }
 
   @override
@@ -213,17 +116,16 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
     return FlutterMap(
       options: MapOptions(
         initialCenter: _mapCenter, // 🎯 DBから取得した自宅位置が中心になります
-        initialZoom: 15.0, // 自宅周辺がハッキリ見えるように少しズームアップ
+        initialZoom: offlineMapInitialZoom, // 自宅周辺がハッキリ見えるように少しズームアップ
+        cameraConstraint: CameraConstraint.containCenter(
+          bounds: boundsForHomeRadius(_mapCenter),
+        ),
         minZoom: 10,
         maxZoom: 16,
       ),
       children: [
-        VectorTileLayer(
-          theme: _buildOfflineMapTheme(),
-          tileProviders: TileProviders({
-            'pmtiles': _tileProvider!,
-          }),
-        ),
+        buildOfflineBaseMapLayer(_tileProvider!),
+        buildHomeRadiusLayer(_mapCenter),
 
         // 🎯 核心修正③：DBから読み込んだ「自宅の場所（_mapCenter）」に赤い大きなピンを刺す
         MarkerLayer(

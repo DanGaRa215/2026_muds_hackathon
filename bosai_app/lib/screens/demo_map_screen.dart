@@ -1,15 +1,11 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
-import '../services/home_area_service.dart';
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 
 class DemoMapScreen extends StatefulWidget {
   const DemoMapScreen({super.key});
@@ -37,28 +33,23 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
   Future<void> _loadRegisteredHomeAndMap() async {
     try {
       final homeData = await DatabaseHelper.instance.getRegisteredHome();
-      String targetPmtilesPath = await _copyAssetToLocal(
-        HomeAreaService.tokyo23PmtilesAsset,
-      );
+      String? pmtilesPath;
 
       if (homeData != null) {
         final lat = (homeData['lat'] as num).toDouble();
         final lon = (homeData['lon'] as num).toDouble();
-        final pmtilesPath = homeData['pmtiles_path'].toString();
+        pmtilesPath = homeData['pmtiles_path'].toString();
 
         setState(() {
           _mapCenter = LatLng(lat, lon);
           _currentAddress = homeData['address'] ?? "住所不明";
           _hasHomeInfo = true;
         });
-
-        if (pmtilesPath.isNotEmpty) {
-          targetPmtilesPath = pmtilesPath;
-        }
       }
 
-      final provider =
-          await PmTilesVectorTileProvider.fromSource(targetPmtilesPath);
+      final provider = await loadOfflineMapTileProvider(
+        preferredPath: pmtilesPath,
+      );
 
       if (mounted) {
         setState(() {
@@ -67,7 +58,7 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _mapController.move(_mapCenter, 14.5);
+          _mapController.move(_mapCenter, offlineMapInitialZoom);
         });
       }
     } catch (e) {
@@ -78,84 +69,6 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
         });
       }
     }
-  }
-
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-    if (!await file.exists() || file.lengthSync() == 0) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-          flush: true);
-    }
-    return file.path;
-  }
-
-  vtr.Theme _buildDemoTheme() {
-    final knownLayers = [
-      'water',
-      'building',
-      'roads',
-      'road',
-      'landuse',
-      'transportation',
-      'waterway',
-      'structure'
-    ];
-
-    final List<Map<String, dynamic>> styleLayers = [
-      {
-        'id': 'background',
-        'type': 'background',
-        'paint': {'background-color': '#f2efe9'}
-      },
-    ];
-
-    for (final layerName in knownLayers) {
-      if (layerName.contains('water')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#ccdff0'}
-        });
-      } else if (layerName.contains('building') ||
-          layerName.contains('structure')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#dedede', 'fill-outline-color': '#cccccc'}
-        });
-      } else if (layerName.contains('landuse')) {
-        styleLayers.add({
-          'id': 'layer-$layerName',
-          'type': 'fill',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'fill-color': '#e1ebd5'}
-        });
-      } else {
-        styleLayers.add({
-          'id': 'layer-$layerName-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': layerName,
-          'paint': {'line-color': '#4a90d9', 'line-width': 1.8}
-        });
-      }
-    }
-
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {'type': 'vector', 'url': 'pmtiles'}
-      },
-      'layers': styleLayers,
-    });
   }
 
   @override
@@ -187,15 +100,17 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
                       mapController: _mapController,
                       options: MapOptions(
                           initialCenter: _mapCenter,
-                          initialZoom: 14.0,
+                          initialZoom: offlineMapInitialZoom,
+                          cameraConstraint: _hasHomeInfo
+                              ? CameraConstraint.containCenter(
+                                  bounds: boundsForHomeRadius(_mapCenter),
+                                )
+                              : const CameraConstraint.unconstrained(),
                           minZoom: 10,
                           maxZoom: 17),
                       children: [
-                        VectorTileLayer(
-                          theme: _buildDemoTheme(),
-                          tileProviders:
-                              TileProviders({'pmtiles': _tileProvider!}),
-                        ),
+                        buildOfflineBaseMapLayer(_tileProvider!),
+                        if (_hasHomeInfo) buildHomeRadiusLayer(_mapCenter),
                         MarkerLayer(
                           markers: [
                             Marker(

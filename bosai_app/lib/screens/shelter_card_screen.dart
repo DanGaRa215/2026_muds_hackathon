@@ -1,16 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
 import '../db/shelter_database.dart';
+import '../logic/coastal_logic.dart';
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 import '../routing/models.dart';
 import '../routing/route_service.dart';
 import '../routing_bootstrap.dart';
@@ -22,10 +19,15 @@ class ShelterProposalPage extends StatefulWidget {
     super.key,
     required this.situation,
     this.disasterMode = DisasterMode.earthquake,
+    this.originOverride,
   });
 
   final Set<String> situation;
   final DisasterMode disasterMode;
+
+  /// 非nullの場合、登録済み自宅の代わりにこの座標を起点とする
+  /// （現在地ベースのEEWデモ用。DBの home_info は読まない/書かない）。
+  final LatLng? originOverride;
 
   @override
   State<ShelterProposalPage> createState() => _ShelterProposalPageState();
@@ -58,16 +60,27 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
 
   Future<_ShelterCandidates> _loadShelterCandidates() async {
     final routeService = await RoutingBootstrap.routeService();
-    final registeredHome = await DatabaseHelper.instance.getRegisteredHome();
-    if (registeredHome == null) {
-      return const _ShelterCandidates(needsHomeRegistration: true);
-    }
 
-    final homeLocation = LatLng(
-      (registeredHome['lat'] as num).toDouble(),
-      (registeredHome['lon'] as num).toDouble(),
-    );
-    final tileProvider = await _loadTileProvider();
+    final LatLng homeLocation;
+    final PmTilesVectorTileProvider? tileProvider;
+    final override = widget.originOverride;
+    if (override != null) {
+      homeLocation = override;
+      // 同梱PMTilesへのフォールバック解決（現在地デモが事前コピー済み）
+      tileProvider = await _loadTileProvider(null);
+    } else {
+      final registeredHome = await DatabaseHelper.instance.getRegisteredHome();
+      if (registeredHome == null) {
+        return const _ShelterCandidates(needsHomeRegistration: true);
+      }
+      homeLocation = LatLng(
+        (registeredHome['lat'] as num).toDouble(),
+        (registeredHome['lon'] as num).toDouble(),
+      );
+      tileProvider = await _loadTileProvider(
+        registeredHome['pmtiles_path']?.toString(),
+      );
+    }
     if (routeService.isInRoutingArea(homeLocation)) {
       final straightCandidates = HomeAreaService.nearestSheltersByStraightLine(
         home: homeLocation,
@@ -91,7 +104,14 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
               .distanceM
               .compareTo(routesByShelterId[b.shelterId]!.distanceM),
         );
-      final shelters = routeRanked.isEmpty ? straightCandidates : routeRanked;
+      var shelters = routeRanked.isEmpty ? straightCandidates : routeRanked;
+      if (_needsSurgeRanking) {
+        shelters = rankSheltersForSurge(
+          shelters: shelters,
+          origin: homeLocation,
+          routesByShelterId: routesByShelterId,
+        );
+      }
       return _ShelterCandidates(
         shelters: shelters.take(_displayCandidateLimit).toList(),
         homeLocation: homeLocation,
@@ -101,42 +121,44 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
     }
 
     final shelterDb = await ShelterDatabase.instance;
+    final fallbackQueryLimit =
+        _needsSurgeRanking ? _routeSortCandidateLimit : _displayCandidateLimit;
     final nearest = await shelterDb.queryNearest(
       lat: homeLocation.latitude,
       lon: homeLocation.longitude,
       mode: widget.disasterMode,
-      limit: _displayCandidateLimit,
+      limit: fallbackQueryLimit,
       preferDisasterType: false,
     );
+    var fallbackShelters =
+        nearest.shelters.map(HomeAreaService.toShelterInfo).toList();
+    if (_needsSurgeRanking) {
+      fallbackShelters = rankSheltersForSurge(
+        shelters: fallbackShelters,
+        origin: homeLocation,
+      );
+    }
     return _ShelterCandidates(
-      shelters: nearest.shelters.map(HomeAreaService.toShelterInfo).toList(),
+      shelters: fallbackShelters.take(_displayCandidateLimit).toList(),
       homeLocation: homeLocation,
       tileProvider: tileProvider,
     );
   }
 
-  Future<PmTilesVectorTileProvider?> _loadTileProvider() async {
+  /// 高潮/津波の状況タグがある時のみリランクを適用する
+  /// （既存デモは situation が空なので挙動不変）。
+  bool get _needsSurgeRanking =>
+      widget.situation.contains('surge') ||
+      widget.situation.contains('tsunami');
+
+  Future<PmTilesVectorTileProvider?> _loadTileProvider(
+      String? pmtilesPath) async {
     try {
-      final localPath =
-          await _copyAssetToLocal(HomeAreaService.tokyo23PmtilesAsset);
-      return PmTilesVectorTileProvider.fromSource(localPath);
+      return loadOfflineMapTileProvider(preferredPath: pmtilesPath);
     } catch (e) {
       debugPrint('Shelter proposal map unavailable: $e');
       return null;
     }
-  }
-
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-    if (!await file.exists() || file.lengthSync() == 0) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
-    }
-    return file.path;
   }
 
   @override
@@ -364,6 +386,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
                                       shelter: shelter,
                                       mode: widget.disasterMode,
                                       initialRoute: route,
+                                      originOverride: widget.originOverride,
                                     ),
                                   ),
                                 );
@@ -429,12 +452,8 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
           maxZoom: 16,
         ),
         children: [
-          VectorTileLayer(
-            theme: _buildRoadsTheme(),
-            tileProviders: TileProviders({
-              'pmtiles': tileProvider,
-            }),
-          ),
+          buildOfflineBaseMapLayer(tileProvider),
+          buildHomeRadiusLayer(homeLocation),
           if (route != null && route.geometry.length >= 2)
             PolylineLayer(
               polylines: [
@@ -597,37 +616,6 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         ),
       ),
     );
-  }
-
-  vtr.Theme _buildRoadsTheme() {
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#B8C1CC',
-            'line-width': 2.0,
-          },
-        },
-      ],
-    });
   }
 
   Widget _buildNeedsHomeRegistrationState() {
