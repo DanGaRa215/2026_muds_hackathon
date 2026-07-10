@@ -230,7 +230,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           'reference_only': true,
           'suggestions': [
             {
-              'text': 'L字金具の設置を推奨。実調査で転倒率33.5%→8.9%（約1/4）',
+              'text': 'L字金具の設置を推奨。実調査で転倒率 33.5% → 8.9%（約1/4）',
               'source': 'TFD-H',
             },
           ],
@@ -426,14 +426,23 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 💡 テーマ設定（ライト/ダーク）を動的にキャッチ
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 🎨 モードに応じてカラーパレットを切り替え
+    final currentBgColor = isDark ? theme.colorScheme.background : const Color(0xFFF5F0E8);
+    final currentTextColor = isDark ? theme.colorScheme.onBackground : const Color(0xFF300808);
+
     final payload = _payload;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F0E8),
+      backgroundColor: currentBgColor,
       appBar: AppBar(
         title: const Text('AI家具安全診断'),
-        backgroundColor: const Color(0xFFF5F0E8),
-        foregroundColor: const Color(0xFF300808),
+        backgroundColor: currentBgColor,
+        foregroundColor: currentTextColor,
+        elevation: 0,
         actions: [
           IconButton(
             tooltip: 'ホームへ戻る',
@@ -457,12 +466,16 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               _buildDemoModeSection(),
               const SizedBox(height: 12),
               FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark ? theme.colorScheme.primary : const Color(0xFF300808),
+                  foregroundColor: isDark ? theme.colorScheme.onPrimary : Colors.white,
+                ),
                 onPressed: _isLoading ? null : _runDiagnosis,
                 icon: _isLoading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.analytics_outlined),
                 label: Text(_isLoading ? '判定中（最大2分）...' : '診断する'),
@@ -478,13 +491,13 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               const SizedBox(height: 12),
               _buildEnvNote(),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'これはあくまでAIの提案です。',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF5A463C),
+                  color: isDark ? theme.colorScheme.onBackground.withOpacity(0.7) : const Color(0xFF5A463C),
                 ),
               ),
             ],
@@ -533,7 +546,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           Text(
             '画像・補助入力・状態分岐をまとめたUIです。判定根拠はバックエンドに寄せ、UIは結果の描画に専念します。',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.88),
+              color: Colors.white.withOpacity(0.88),
               height: 1.4,
             ),
           ),
@@ -591,9 +604,9 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               height: 180,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08)),
               ),
               child: const Text('ここに選択した画像が表示されます'),
             ),
@@ -604,6 +617,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   }
 
   Widget _buildInputSection() {
+    final theme = Theme.of(context);
     return _SectionCard(
       title: '補助入力',
       subtitle: '建物情報はUIで補助的に入力します。',
@@ -611,7 +625,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<String>(
-            initialValue: _structure,
+            value: _structure,
             decoration: const InputDecoration(labelText: '建物構造'),
             items: const [
               DropdownMenuItem(value: 'wood', child: Text('木造')),
@@ -622,7 +636,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<int>(
-            initialValue: _floorNo,
+            value: _floorNo,
             decoration: const InputDecoration(labelText: '階数'),
             items: List.generate(
               20,
@@ -644,7 +658,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
           const SizedBox(height: 8),
           Text(
             '表示値: ${_structureLabel(_structure)} / $_floorNo階 / 免震${_baseIsolated ? 'あり' : 'なし'}',
-            style: TextStyle(color: Colors.black.withValues(alpha: 0.62)),
+            style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.62)),
           ),
         ],
       ),
@@ -689,9 +703,9 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
+        border: Border.all(color: color.withOpacity(0.28)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,6 +784,10 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         ),
         const SizedBox(height: 8),
         FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          ),
           onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
           icon: const Icon(Icons.home_outlined),
           label: const Text('ホームへ戻る'),
@@ -795,7 +813,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -853,7 +871,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       usingDemo
           ? '開発時は --dart-define=API_BASE_URL=... --dart-define=APP_KEY=... で接続情報を注入できます。'
           : '接続情報は dart-define から読み取っています。',
-      style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55), fontSize: 12),
     );
   }
 }
@@ -871,15 +889,18 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface, // 白固定からテーマのサーフェス色へ
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -890,12 +911,12 @@ class _SectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
           ),
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: TextStyle(color: Colors.black.withValues(alpha: 0.62)),
+            style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.62)),
           ),
           const SizedBox(height: 14),
           child,
@@ -915,9 +936,9 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
+        color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
       ),
       child: Text(
         label,
@@ -952,6 +973,9 @@ class _ResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     final furniture = result['furniture'] as Map<String, dynamic>;
     final braces =
         (result['braces'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
@@ -968,9 +992,9 @@ class _ResultCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
+        color: color.withOpacity(isDark ? 0.15 : 0.06),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
+        border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -984,15 +1008,16 @@ class _ResultCard extends StatelessWidget {
                   children: [
                     Text(
                       furnitureLabel(furniture['class'] as String),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '信頼度 ${(furniture['confidence'] as num).toDouble().toStringAsFixed(2)}',
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
+                      style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.55)),
                     ),
                   ],
                 ),
@@ -1011,16 +1036,16 @@ class _ResultCard extends StatelessWidget {
             children: [
               _RiskBadge(
                 color: color,
-                  icon: Icons.change_history,
+                icon: Icons.change_history,
                 label: riskLevelLabel(level),
               ),
               _RiskBadge(
-                color: Colors.black87,
+                color: theme.colorScheme.onSurface.withOpacity(0.85),
                 icon: riskTypeIcon(risk['type'] as String),
                 label: riskTypeLabel(risk['type'] as String),
               ),
-                if (bbox is List)
-                  const _RiskBadge(
+              if (bbox is List)
+                const _RiskBadge(
                   color: Colors.blueGrey,
                   icon: Icons.crop_free,
                   label: 'bboxあり',
@@ -1053,7 +1078,7 @@ class _ResultCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.warning_amber_rounded, size: 18),
+                    const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
                     const SizedBox(width: 6),
                     Expanded(child: Text(warningLabel(warning))),
                   ],
@@ -1070,7 +1095,7 @@ class _ResultCard extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: theme.colorScheme.onSurface.withOpacity(0.04),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
@@ -1089,7 +1114,7 @@ class _ResultCard extends StatelessWidget {
                               child: Text(
                                 suggestion['source'] as String,
                                 style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.55),
+                                  color: theme.colorScheme.onSurface.withOpacity(0.55),
                                   fontSize: 12,
                                 ),
                               ),
@@ -1106,7 +1131,7 @@ class _ResultCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               '対策前は ${risk['base_level'] as String} でした',
-              style: TextStyle(color: Colors.black.withValues(alpha: 0.52), fontSize: 12),
+              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.52), fontSize: 12),
             ),
           ],
         ],
@@ -1123,12 +1148,13 @@ class _SmallChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+        border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1136,7 +1162,7 @@ class _SmallChip extends StatelessWidget {
         children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 2),
-          Text(subLabel, style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.58))),
+          Text(subLabel, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withOpacity(0.58))),
         ],
       ),
     );
@@ -1159,7 +1185,7 @@ class _RiskBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+        color: color.withOpacity(0.14),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -1190,6 +1216,8 @@ class _UnknownsCard extends StatelessWidget {
           tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(top: 8),
           title: const Text('折りたたんで表示'),
+          textColor: Theme.of(context).colorScheme.onSurface,
+          iconColor: Theme.of(context).colorScheme.onSurface,
           children: [
             ...unknowns.map(
               (item) => Padding(
