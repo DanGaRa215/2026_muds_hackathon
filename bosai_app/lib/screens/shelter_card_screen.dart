@@ -91,7 +91,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         from: homeLocation,
         shelters: straightCandidates,
         mode: widget.disasterMode,
-        profile: WeightProfile.balanced,
+        profile: WeightProfile.safest,
       );
       final routesByShelterId = {
         for (final route in routes) route.shelterId: route,
@@ -100,9 +100,16 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         for (final shelter in straightCandidates)
           if (routesByShelterId.containsKey(shelter.shelterId)) shelter,
       ]..sort(
-          (a, b) => routesByShelterId[a.shelterId]!
-              .distanceM
-              .compareTo(routesByShelterId[b.shelterId]!.distanceM),
+          (a, b) {
+            final aRoute = routesByShelterId[a.shelterId]!;
+            final bRoute = routesByShelterId[b.shelterId]!;
+            final fallbackOrder = (aRoute.usedFallback ? 1 : 0)
+                .compareTo(bRoute.usedFallback ? 1 : 0);
+            if (fallbackOrder != 0) return fallbackOrder;
+            final penaltyOrder = aRoute.penaltyM.compareTo(bRoute.penaltyM);
+            if (penaltyOrder != 0) return penaltyOrder;
+            return aRoute.distanceM.compareTo(bRoute.distanceM);
+          },
         );
       var shelters = routeRanked.isEmpty ? straightCandidates : routeRanked;
       if (_needsSurgeRanking) {

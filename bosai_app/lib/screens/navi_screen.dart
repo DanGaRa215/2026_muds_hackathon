@@ -46,12 +46,10 @@ class _NaviScreenState extends State<NaviScreen> {
   PmTilesVectorTileProvider? _tileProvider;
   LatLng? _currentPosition;
   LatLng? _homeLocation;
-  final Map<WeightProfile, RouteResult> _routesByProfile = {};
-  final Map<WeightProfile, String> _routeSourceLabelsByProfile = {};
-  WeightProfile _selectedProfile = WeightProfile.balanced;
+  RouteResult? _route;
+  String? _routeSourceLabel;
   String? _errorMessage;
   bool _isLoading = true;
-  bool _isRouteLoading = false;
   bool _needsHomeRegistration = false;
 
   @override
@@ -84,7 +82,7 @@ class _NaviScreenState extends State<NaviScreen> {
         final canUseInitialRoute = initialRoute != null &&
             initialRoute.shelterId == widget.shelter.shelterId &&
             initialRoute.mode == widget.mode &&
-            initialRoute.profile == _selectedProfile &&
+            initialRoute.profile == WeightProfile.safest &&
             (currentPosition == null ||
                 _distanceM(currentPosition, homeLocation) < 300);
         loadedRoute = canUseInitialRoute
@@ -97,7 +95,7 @@ class _NaviScreenState extends State<NaviScreen> {
                 precomputeService: precomputeService,
                 homeLocation: homeLocation,
                 currentPosition: currentPosition,
-                profile: _selectedProfile,
+                profile: WeightProfile.safest,
                 allowPrecomputedRoute: allowPrecomputedRoute,
               );
       }
@@ -109,9 +107,8 @@ class _NaviScreenState extends State<NaviScreen> {
         _homeLocation = homeLocation;
         final route = loadedRoute?.route;
         if (route != null) {
-          _routesByProfile[_selectedProfile] = route;
-          _routeSourceLabelsByProfile[_selectedProfile] =
-              loadedRoute!.sourceLabel!;
+          _route = route;
+          _routeSourceLabel = loadedRoute!.sourceLabel!;
         }
         _needsHomeRegistration = homeLocation == null;
         _isLoading = false;
@@ -193,60 +190,6 @@ class _NaviScreenState extends State<NaviScreen> {
     return _RouteLoadResult(route: route, sourceLabel: routeSourceLabel);
   }
 
-  Future<void> _loadRouteForProfile(WeightProfile profile) async {
-    final homeLocation = _homeLocation;
-    if (homeLocation == null ||
-        _isRouteLoading ||
-        _routesByProfile.containsKey(profile)) {
-      return;
-    }
-
-    setState(() => _isRouteLoading = true);
-    try {
-      final routeService = await RoutingBootstrap.routeService();
-      final result = await _resolveRoute(
-        routeService: routeService,
-        precomputeService: PrecomputeService(routeService),
-        homeLocation: homeLocation,
-        currentPosition: _currentPosition,
-        profile: profile,
-        allowPrecomputedRoute: widget.originOverride == null,
-      );
-      if (!mounted) return;
-      setState(() {
-        final route = result.route;
-        if (route != null) {
-          _routesByProfile[profile] = route;
-          _routeSourceLabelsByProfile[profile] = result.sourceLabel!;
-        }
-        _isRouteLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = e.toString();
-        _isRouteLoading = false;
-      });
-    }
-  }
-
-  void _onProfileSelectionChanged(Set<WeightProfile> selection) {
-    if (_isRouteLoading) {
-      return;
-    }
-    final profile = selection.single;
-    if (profile == _selectedProfile) {
-      return;
-    }
-    setState(() => _selectedProfile = profile);
-    _loadRouteForProfile(profile);
-  }
-
-  RouteResult? get _selectedRoute => _routesByProfile[_selectedProfile];
-
-  String? get _selectedRouteSourceLabel =>
-      _routeSourceLabelsByProfile[_selectedProfile];
-
   Future<LatLng?> _getCurrentLocation() async {
     return LocationService.getCurrentLatLng();
   }
@@ -308,20 +251,8 @@ class _NaviScreenState extends State<NaviScreen> {
       return _buildHomeRegistrationPrompt();
     }
 
-    final route = _selectedRoute;
+    final route = _route;
     if (route == null) {
-      if (_isRouteLoading) {
-        return const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('選択中のルートを読み込み中...'),
-            ],
-          ),
-        );
-      }
       return _buildFallbackNavigation();
     }
 
@@ -466,7 +397,7 @@ class _NaviScreenState extends State<NaviScreen> {
             ),
           ],
         ),
-        if (_selectedRouteSourceLabel != null)
+        if (_routeSourceLabel != null)
           Positioned(
             top: 12,
             left: 12,
@@ -484,7 +415,7 @@ class _NaviScreenState extends State<NaviScreen> {
                   vertical: 6,
                 ),
                 child: Text(
-                  _selectedRouteSourceLabel!,
+                  _routeSourceLabel!,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -510,31 +441,11 @@ class _NaviScreenState extends State<NaviScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            SegmentedButton<WeightProfile>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: WeightProfile.fastest,
-                  label: Text('ルート1'),
-                ),
-                ButtonSegment(
-                  value: WeightProfile.balanced,
-                  label: Text('ルート2'),
-                ),
-                ButtonSegment(
-                  value: WeightProfile.safest,
-                  label: Text('ルート3'),
-                ),
-              ],
-              selected: {_selectedProfile},
-              onSelectionChanged:
-                  _isRouteLoading ? null : _onProfileSelectionChanged,
+            const Text(
+              '安全ルート',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            if (_isRouteLoading) ...[
-              const SizedBox(height: 8),
-              const LinearProgressIndicator(),
-            ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             if (widget.mode == DisasterMode.flood) ...[
               DecoratedBox(
                 decoration: BoxDecoration(

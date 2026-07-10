@@ -157,5 +157,50 @@ void main() {
       );
       expect(ranked.first.shelterId, 'b');
     });
+
+    test('ルート情報がある場合はフォールバックなし・ペナルティ小を優先する', () {
+      final risky = _shelter(
+        id: 'risky',
+        lat: 35.655,
+        lon: 139.797,
+        elevationM: 20,
+        coastDistanceM: 3000,
+        types: 'surge',
+      );
+      final safe = _shelter(
+        id: 'safe',
+        lat: 35.656,
+        lon: 139.798,
+        elevationM: 0,
+        coastDistanceM: 0,
+        types: 'surge',
+      );
+      final routes = {
+        'risky': RouteResult.fromCosts(
+          shelterId: 'risky',
+          mode: DisasterMode.flood,
+          profile: WeightProfile.safest,
+          distanceM: 100,
+          penaltyM: 100,
+          geometry: const [],
+          usedFallback: true,
+        ),
+        'safe': RouteResult.fromCosts(
+          shelterId: 'safe',
+          mode: DisasterMode.flood,
+          profile: WeightProfile.safest,
+          distanceM: 2000,
+          penaltyM: 0,
+          geometry: const [],
+          usedFallback: false,
+        ),
+      };
+      final ranked = rankSheltersForSurge(
+        shelters: [risky, safe],
+        origin: origin,
+        routesByShelterId: routes,
+      );
+      expect(ranked.first.shelterId, 'safe');
+    });
   });
 }
