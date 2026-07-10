@@ -1,14 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 import '../routing_bootstrap.dart';
 import '../services/home_area_service.dart';
 
@@ -21,7 +17,6 @@ class HomeRegisterScreen extends StatefulWidget {
 
 class _HomeRegisterScreenState extends State<HomeRegisterScreen> {
   static const _initialCenter = LatLng(35.7068, 139.8683);
-  static const _initialZoom = 14.0;
 
   PmTilesVectorTileProvider? _tileProvider;
   LatLng? _selectedHome;
@@ -37,8 +32,7 @@ class _HomeRegisterScreenState extends State<HomeRegisterScreen> {
 
   Future<void> _initMap() async {
     try {
-      final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
-      final provider = await PmTilesVectorTileProvider.fromSource(localPath);
+      final provider = await loadOfflineMapTileProvider();
 
       if (mounted) {
         setState(() {
@@ -54,52 +48,6 @@ class _HomeRegisterScreenState extends State<HomeRegisterScreen> {
         });
       }
     }
-  }
-
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-
-    if (!file.existsSync()) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
-    }
-
-    return file.path;
-  }
-
-  vtr.Theme _buildRoadsTheme() {
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#4a90d9',
-            'line-width': 2.0,
-          },
-        },
-      ],
-    });
   }
 
   Future<void> _confirmSelectedHome() async {
@@ -191,18 +139,14 @@ class _HomeRegisterScreenState extends State<HomeRegisterScreen> {
         FlutterMap(
           options: MapOptions(
             initialCenter: _initialCenter,
-            initialZoom: _initialZoom,
+            initialZoom: offlineMapInitialZoom,
             minZoom: 10,
             maxZoom: 16,
             onTap: (_, point) => setState(() => _selectedHome = point),
           ),
           children: [
-            VectorTileLayer(
-              theme: _buildRoadsTheme(),
-              tileProviders: TileProviders({
-                'pmtiles': _tileProvider!,
-              }),
-            ),
+            buildOfflineBaseMapLayer(_tileProvider!),
+            if (selectedHome != null) buildHomeRadiusLayer(selectedHome),
             if (selectedHome != null)
               MarkerLayer(
                 markers: [

@@ -1,16 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 import '../routing/models.dart';
 import '../routing/precompute_service.dart';
 import '../routing/route_service.dart';
@@ -61,11 +57,13 @@ class _NaviScreenState extends State<NaviScreen> {
 
   Future<void> _load() async {
     try {
-      final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
-      final provider = await PmTilesVectorTileProvider.fromSource(localPath);
+      final homeInfo = await DatabaseHelper.instance.getRegisteredHome();
+      final provider = await loadOfflineMapTileProvider(
+        preferredPath: homeInfo?['pmtiles_path']?.toString(),
+      );
       final routeService = await RoutingBootstrap.routeService();
       final precomputeService = PrecomputeService(routeService);
-      final homeLocation = await _loadHomeLocation();
+      final homeLocation = _homeLocationFrom(homeInfo);
 
       LatLng? currentPosition;
       try {
@@ -120,23 +118,7 @@ class _NaviScreenState extends State<NaviScreen> {
     }
   }
 
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-
-    if (!file.existsSync()) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
-    }
-
-    return file.path;
-  }
-
-  Future<LatLng?> _loadHomeLocation() async {
-    final info = await DatabaseHelper.instance.getRegisteredHome();
+  LatLng? _homeLocationFrom(Map<String, Object?>? info) {
     if (info == null) return null;
     return LatLng(
       (info['lat'] as num).toDouble(),
@@ -280,37 +262,6 @@ class _NaviScreenState extends State<NaviScreen> {
     return HomeAreaService.distanceM(a, b);
   }
 
-  vtr.Theme _buildRoadsTheme() {
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#B8C1CC',
-            'line-width': 2.0,
-          },
-        },
-      ],
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -426,9 +377,11 @@ class _NaviScreenState extends State<NaviScreen> {
   }
 
   Widget _buildMap(RouteResult route) {
-    final points = route.geometry.isEmpty
-        ? [widget.shelter.latLng]
-        : [...route.geometry, widget.shelter.latLng];
+    final points = [
+      if (_homeLocation != null) _homeLocation!,
+      if (route.geometry.isEmpty) widget.shelter.latLng else ...route.geometry,
+      widget.shelter.latLng,
+    ];
     final initialCameraFit = points.length >= 2
         ? CameraFit.bounds(
             bounds: LatLngBounds.fromPoints(points),
@@ -446,12 +399,8 @@ class _NaviScreenState extends State<NaviScreen> {
         maxZoom: 16,
       ),
       children: [
-        VectorTileLayer(
-          theme: _buildRoadsTheme(),
-          tileProviders: TileProviders({
-            'pmtiles': _tileProvider!,
-          }),
-        ),
+        buildOfflineBaseMapLayer(_tileProvider!),
+        if (_homeLocation != null) buildHomeRadiusLayer(_homeLocation!),
         if (route.geometry.length >= 2)
           PolylineLayer(
             polylines: [
@@ -820,12 +769,8 @@ class _NaviScreenState extends State<NaviScreen> {
         maxZoom: 16,
       ),
       children: [
-        VectorTileLayer(
-          theme: _buildRoadsTheme(),
-          tileProviders: TileProviders({
-            'pmtiles': _tileProvider!,
-          }),
-        ),
+        buildOfflineBaseMapLayer(_tileProvider!),
+        buildHomeRadiusLayer(homeLocation),
         MarkerLayer(
           markers: [
             Marker(

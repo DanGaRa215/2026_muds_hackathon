@@ -10,9 +10,12 @@ class EewManager {
   EewManager._internal();
 
   static const String _productionUrl = 'wss://api.p2pquake.net/v2/ws';
-  static const String _sandboxUrl = 'wss://api-realtime-sandbox.p2pquake.net/v2/ws';
+  static const String _sandboxUrl =
+      'wss://api-realtime-sandbox.p2pquake.net/v2/ws';
 
   WebSocketChannel? _channel;
+  StreamSubscription? _subscription;
+  Timer? _reconnectTimer;
   bool _isConnecting = false;
   int _reconnectDelaySeconds = 1;
   bool _shouldReconnect = true;
@@ -22,10 +25,12 @@ class EewManager {
   final int minScaleThreshold = 10; // 震度1以上
 
   // 【デバッグ用】UIに接続状態やログを伝えるためのストリーム
-  final StreamController<String> _logController = StreamController<String>.broadcast();
+  final StreamController<String> _logController =
+      StreamController<String>.broadcast();
   Stream<String> get logStream => _logController.stream;
 
-  final StreamController<bool> _statusController = StreamController<bool>.broadcast();
+  final StreamController<bool> _statusController =
+      StreamController<bool>.broadcast();
   Stream<bool> get statusStream => _statusController.stream;
 
   bool get isConnected => _channel != null && !_isConnecting;
@@ -46,6 +51,8 @@ class EewManager {
   /// WebSocket接続を開始
   void connect({bool useSandbox = true}) {
     if (_isConnecting || _channel != null) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _isConnecting = true;
     _shouldReconnect = true;
     _statusController.add(false);
@@ -54,26 +61,39 @@ class EewManager {
     _addLog('🔌 接続開始: $url');
 
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(url));
-      _isConnecting = false;
-      _statusController.add(true);
-      _addLog('✅ 接続に成功しました');
+      final channel = WebSocketChannel.connect(Uri.parse(url));
+      _channel = channel;
 
-      _channel!.stream.listen(
+      channel.ready.then((_) {
+        if (!identical(_channel, channel) || !_shouldReconnect) return;
+        _isConnecting = false;
+        _statusController.add(true);
+        _addLog('✅ 接続に成功しました');
+      }).catchError((Object error, StackTrace stackTrace) {
+        if (!identical(_channel, channel)) return;
+        _addLog('❌ 接続失敗: $error');
+        _clearCurrentChannel();
+        if (_shouldReconnect) _scheduleReconnect(useSandbox);
+      });
+
+      _subscription = channel.stream.listen(
         (message) {
           _resetReconnectDelay();
           _handleMessage(message.toString());
         },
         onError: (error) {
+          if (!identical(_channel, channel)) return;
           _addLog('❌ エラー発生: $error');
-          _statusController.add(false);
+          _clearCurrentChannel();
           if (_shouldReconnect) _scheduleReconnect(useSandbox);
         },
         onDone: () {
+          if (!identical(_channel, channel)) return;
           _addLog('🔌 接続が終了しました (OnDone)');
-          _statusController.add(false);
+          _clearCurrentChannel();
           if (_shouldReconnect) _scheduleReconnect(useSandbox);
         },
+        cancelOnError: true,
       );
     } catch (e) {
       _addLog('❌ 接続例外: $e');
@@ -86,20 +106,21 @@ class EewManager {
   /// 接続を手動で切断
   void disconnect() {
     _shouldReconnect = false;
-    _channel?.sink.close();
-    _channel = null;
-    _isConnecting = false;
-    _statusController.add(false);
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _closeCurrentChannel();
     _addLog('🛑 手動で切断しました');
   }
 
   void _scheduleReconnect(bool useSandbox) {
     if (!_shouldReconnect) return;
-    _channel = null;
+    if (_reconnectTimer?.isActive ?? false) return;
+    _clearCurrentChannel();
     _statusController.add(false);
 
     _addLog('⏳ $_reconnectDelaySeconds 秒後に自動再接続を試みます...');
-    Timer(Duration(seconds: _reconnectDelaySeconds), () {
+    _reconnectTimer = Timer(Duration(seconds: _reconnectDelaySeconds), () {
+      _reconnectTimer = null;
       if (_shouldReconnect) {
         _reconnectDelaySeconds = (_reconnectDelaySeconds * 2).clamp(1, 60);
         connect(useSandbox: useSandbox);
@@ -109,6 +130,25 @@ class EewManager {
 
   void _resetReconnectDelay() {
     _reconnectDelaySeconds = 1;
+  }
+
+  void _clearCurrentChannel() {
+    final subscription = _subscription;
+    _subscription = null;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+    _channel = null;
+    _isConnecting = false;
+    _statusController.add(false);
+  }
+
+  void _closeCurrentChannel() {
+    final channel = _channel;
+    _clearCurrentChannel();
+    if (channel != null) {
+      unawaited(channel.sink.close().catchError((_) {}));
+    }
   }
 
   /// メッセージのパースと処理
@@ -129,7 +169,9 @@ class EewManager {
           return;
         }
         _processedIds.add(id);
-        if (_processedIds.length > 100) _processedIds.remove(_processedIds.first);
+        if (_processedIds.length > 100) {
+          _processedIds.remove(_processedIds.first);
+        }
       }
 
       switch (code) {
@@ -226,16 +268,34 @@ class EewManager {
     );
   }
 
-  void _triggerLocalNotification({required String title, required String body}) {
+  void _triggerLocalNotification(
+      {required String title, required String body}) {
     _addLog('🔔 【ローカル通知システム起動】\nタイトル: $title\n本文: $body');
     // TODO: flutter_local_notificationsの実際のプラグイン呼び出し
   }
 
   String _getScaleName(int code) {
     switch (code) {
-      case 10: return '1'; case 20: return '2'; case 30: return '3'; case 40: return '4';
-      case 45: return '5弱'; case 50: return '5強'; case 55: return '6弱'; case 60: return '6強'; case 70: return '7';
-      default: return '不明';
+      case 10:
+        return '1';
+      case 20:
+        return '2';
+      case 30:
+        return '3';
+      case 40:
+        return '4';
+      case 45:
+        return '5弱';
+      case 50:
+        return '5強';
+      case 55:
+        return '6弱';
+      case 60:
+        return '6強';
+      case 70:
+        return '7';
+      default:
+        return '不明';
     }
   }
 

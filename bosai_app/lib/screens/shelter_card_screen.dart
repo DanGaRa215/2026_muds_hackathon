@@ -1,16 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
-import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
 import '../db/shelter_database.dart';
+import '../map/offline_map_tiles.dart';
+import '../map/offline_map_visuals.dart';
 import '../routing/models.dart';
 import '../routing/route_service.dart';
 import '../routing_bootstrap.dart';
@@ -67,7 +63,9 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
       (registeredHome['lat'] as num).toDouble(),
       (registeredHome['lon'] as num).toDouble(),
     );
-    final tileProvider = await _loadTileProvider();
+    final tileProvider = await _loadTileProvider(
+      registeredHome['pmtiles_path']?.toString(),
+    );
     if (routeService.isInRoutingArea(homeLocation)) {
       final straightCandidates = HomeAreaService.nearestSheltersByStraightLine(
         home: homeLocation,
@@ -115,28 +113,14 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
     );
   }
 
-  Future<PmTilesVectorTileProvider?> _loadTileProvider() async {
+  Future<PmTilesVectorTileProvider?> _loadTileProvider(
+      String? pmtilesPath) async {
     try {
-      final localPath =
-          await _copyAssetToLocal(HomeAreaService.tokyo23PmtilesAsset);
-      return PmTilesVectorTileProvider.fromSource(localPath);
+      return loadOfflineMapTileProvider(preferredPath: pmtilesPath);
     } catch (e) {
       debugPrint('Shelter proposal map unavailable: $e');
       return null;
     }
-  }
-
-  Future<String> _copyAssetToLocal(String assetName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$assetName');
-    if (!await file.exists() || file.lengthSync() == 0) {
-      final data = await rootBundle.load('assets/$assetName');
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
-    }
-    return file.path;
   }
 
   @override
@@ -429,12 +413,8 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
           maxZoom: 16,
         ),
         children: [
-          VectorTileLayer(
-            theme: _buildRoadsTheme(),
-            tileProviders: TileProviders({
-              'pmtiles': tileProvider,
-            }),
-          ),
+          buildOfflineBaseMapLayer(tileProvider),
+          buildHomeRadiusLayer(homeLocation),
           if (route != null && route.geometry.length >= 2)
             PolylineLayer(
               polylines: [
@@ -597,37 +577,6 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         ),
       ),
     );
-  }
-
-  vtr.Theme _buildRoadsTheme() {
-    return vtr.ThemeReader().read({
-      'version': 8,
-      'sources': {
-        'pmtiles': {
-          'type': 'vector',
-          'url': 'pmtiles',
-        },
-      },
-      'layers': [
-        {
-          'id': 'background',
-          'type': 'background',
-          'paint': {
-            'background-color': '#e8e8e8',
-          },
-        },
-        {
-          'id': 'roads-line',
-          'type': 'line',
-          'source': 'pmtiles',
-          'source-layer': 'roads',
-          'paint': {
-            'line-color': '#B8C1CC',
-            'line-width': 2.0,
-          },
-        },
-      ],
-    });
   }
 
   Widget _buildNeedsHomeRegistrationState() {
