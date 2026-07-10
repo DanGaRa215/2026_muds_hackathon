@@ -276,8 +276,8 @@ def verify() -> bool:
     # 9. ファイルサイズ
     size_bytes = DB_PATH.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    add(9, "routing.db ≤200MB", size_bytes <= 200 * 1024 * 1024,
-        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤200MB")
+    add(9, "routing.db ≤95MB", size_bytes <= 95 * 1024 * 1024,
+        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤95MB")
 
     conn.close()
 

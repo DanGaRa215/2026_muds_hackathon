@@ -160,7 +160,7 @@ lon 139.55-139.93
 - `preprocess/01_fetch_osm.py`: Nominatimで東京23区各区の行政界を取得し、union + 1.5kmバッファでOSM道路網と水域を取得する
 - `preprocess/04_build_shelters.py`: `bosai_app/assets/shelters.db` から `city_code IN 13101..13123` を抽出する
 - `nearest_node`: 東京23区版ノードSTRtreeで全避難所分を再計算する
-- `05_write_db.py`: 23区サイズの受け入れ条件、23区東西2系統の経路検証、200MB以下のサイズ検証を行う
+- `05_write_db.py`: 23区サイズの受け入れ条件、23区東西2系統の経路検証、95MB以下のサイズ検証を行う
 - `edges(from_node/to_node)` の検索用indexは、アプリが起動時に全edgesをメモリグラフ化するためassetには含めない
 - 生成後の `preprocess/output/routing.db` を `bosai_app/assets/routing.db` へ差し替える
 - `RoutingDatabase._assetRevision` を更新し、既存端末ローカルコピーを再展開させる
@@ -254,7 +254,7 @@ lon 139.55-139.93
 実装中に以下が判明した場合は作業を停止し、差分と判断材料を報告する。
 
 - `routing.db` の東京23区生成がOverpass・メモリ・サイズ制約で完走できない
-- `routing.db` が200MBを超え、`--geom-decimals 5` でも収まらない
+- `routing.db` が95MBを超え、`--geom-decimals 5` と未使用index除外でも収まらない
 - `home_info` スキーマや既存保存フローが本仕様と異なる
 - `DemoDatabaseHelper` に `home_info` 以外の生きた用途が見つかる
 - 本PRの主目的を超えるレビュー指摘や追加依頼が入る
