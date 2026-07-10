@@ -7,7 +7,19 @@ import 'package:image_picker/image_picker.dart';
 import '../db/database_helper.dart';
 import '../models/diagnosis.dart';
 import '../services/diagnosis_api_client.dart';
+import '../utils/detection_editor.dart';
+import '../widgets/detection_confirm_card.dart';
 import '../widgets/diagnosis_result_card.dart';
+
+enum _DiagnosisPhase {
+  idle,
+  detecting,
+  confirmDetection,
+  diagnosing,
+  result,
+  retake,
+  apiError,
+}
 
 enum _DemoMode {
   auto,
@@ -32,7 +44,10 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   final ImagePicker _picker = ImagePicker();
 
   XFile? _image;
-  bool _isLoading = false;
+  _DiagnosisPhase _phase = _DiagnosisPhase.idle;
+  Map<String, dynamic>? _detection;
+  Map<String, dynamic>? _editedDetection;
+  int _selectedFurnitureIndex = 0;
   Map<String, dynamic>? _payload;
   String? _statusMessage;
 
@@ -53,8 +68,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       if (image != null && mounted) {
         setState(() {
           _image = image;
-          _payload = null;
-          _statusMessage = null;
+          _resetFlowState();
         });
       }
     } catch (e) {
@@ -68,80 +82,157 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
 
   bool get _hasApiConfig => _apiBaseUrl.isNotEmpty && _appKey.isNotEmpty;
 
+  bool get _isLoading =>
+      _phase == _DiagnosisPhase.detecting || _phase == _DiagnosisPhase.diagnosing;
+
+  void _resetFlowState() {
+    _phase = _DiagnosisPhase.idle;
+    _detection = null;
+    _editedDetection = null;
+    _selectedFurnitureIndex = 0;
+    _payload = null;
+    _statusMessage = null;
+  }
+
   Future<void> _runDiagnosis() async {
+    if (_image == null && _demoMode == _DemoMode.auto) {
+      setState(() {
+        _phase = _DiagnosisPhase.retake;
+        _payload = _buildRetakePayload(
+          reason: 'no_furniture',
+          message: '家具全体が写るように撮影してください。',
+        );
+        _statusMessage = _statusMessageFor(_payload!);
+      });
+      return;
+    }
+
     setState(() {
-      _isLoading = true;
+      _phase = _DiagnosisPhase.detecting;
       _statusMessage = null;
       _payload = null;
+      _detection = null;
+      _editedDetection = null;
     });
-
-    Map<String, dynamic> payload;
 
     try {
       if (_demoMode != _DemoMode.auto) {
         await Future<void>.delayed(const Duration(milliseconds: 800));
-        payload = _buildPayload();
-      } else if (_hasApiConfig) {
-        payload = await _diagnoseWithApi();
-      } else {
-        await Future<void>.delayed(const Duration(milliseconds: 800));
-        payload = _buildPayload();
+        if (_demoMode == _DemoMode.apiError) {
+          _setApiError('Vision応答不正です。もう一度お試しください。', 502);
+          return;
+        }
+        final detectResult = _buildDetectPayload();
+        _applyDetectResult(detectResult);
+        return;
       }
+
+      if (_hasApiConfig) {
+        final detectResult = await _detectWithApi();
+        _applyDetectResult(detectResult);
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      _applyDetectResult(_buildDetectionPayload());
     } on DiagnosisApiException catch (e) {
-      payload = {
-        'status': 'api_error',
-        'code': e.statusCode,
-        'message': e.message,
-      };
-    } catch (e) {
-      payload = {
-        'status': 'api_error',
-        'message': '通信環境の良い場所で再試行してください。避難機能には影響ありません。',
-      };
-    }
-
-    if (mounted) {
-      setState(() {
-        _payload = payload;
-        _isLoading = false;
-        _statusMessage = _statusMessageFor(payload);
-      });
-    }
-
-    if (payload['status'] == 'ok') {
-      await _saveHistory(payload);
+      _setApiError(e.message, e.statusCode);
+    } catch (_) {
+      _setApiError('通信環境の良い場所で再試行してください。避難機能には影響ありません。', 0);
     }
   }
 
-  Future<Map<String, dynamic>> _diagnoseWithApi() async {
-    if (_image == null) {
-      return _buildRetakePayload(
-        reason: 'no_furniture',
-        message: '先に画像を選んでから診断してください。',
-      );
+  void _applyDetectResult(Map<String, dynamic> detectResult) {
+    if (!mounted) return;
+
+    if (detectResult['status'] == 'retake') {
+      setState(() {
+        _phase = _DiagnosisPhase.retake;
+        _payload = detectResult;
+        _statusMessage = _statusMessageFor(detectResult);
+      });
+      return;
     }
+
+    final detection = detectResult['detection'] as Map<String, dynamic>;
+    final edited = DetectionEditor.deepCopy(detection);
+    final furniture = edited['furniture'] as List<dynamic>;
+
+    setState(() {
+      _phase = _DiagnosisPhase.confirmDetection;
+      _detection = detection;
+      _editedDetection = edited;
+      _selectedFurnitureIndex = DetectionEditor.initialSelectedIndex(furniture);
+      _statusMessage = null;
+      _payload = null;
+    });
+  }
+
+  void _setApiError(String message, int code) {
+    if (!mounted) return;
+    setState(() {
+      _phase = _DiagnosisPhase.apiError;
+      _payload = {
+        'status': 'api_error',
+        'code': code,
+        'message': message,
+      };
+      _statusMessage = message;
+    });
+  }
+
+  Future<void> _confirmAndDiagnose() async {
+    if (_editedDetection == null) return;
+
+    setState(() => _phase = _DiagnosisPhase.diagnosing);
+
+    final submission = DetectionEditor.buildSubmissionDetection(
+      _editedDetection!,
+      _selectedFurnitureIndex,
+    );
 
     try {
-      final imageBytes = await _image!.readAsBytes();
-      final imageMeta = _imageMetaFor(_image!);
-      final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
+      Map<String, dynamic> payload;
+      if (_hasApiConfig && _demoMode == _DemoMode.auto) {
+        final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
+        payload = await client.diagnoseFromDetection(
+          detection: submission,
+          structure: _structure,
+          floorNo: _floorNo,
+          baseIsolated: _baseIsolated,
+        );
+      } else {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        // デモでは編集内容を結果に反映しない固定JSONを返す（審査員デモ用）
+        payload = _buildOkPayload();
+      }
 
-      return client.diagnose(
-        imageBytes: imageBytes,
-        structure: _structure,
-        floorNo: _floorNo,
-        baseIsolated: _baseIsolated,
-        filename: imageMeta.filename,
-        contentType: imageMeta.contentType,
-      );
-    } on DiagnosisApiException {
-      rethrow;
-    } catch (e) {
-      throw DiagnosisApiException(
-        0,
-        '画像の読み込みまたは通信に失敗しました: $e',
-      );
+      if (!mounted) return;
+      setState(() {
+        _phase = _DiagnosisPhase.result;
+        _payload = payload;
+        _statusMessage = _statusMessageFor(payload);
+      });
+
+      if (payload['status'] == 'ok') {
+        await _saveHistory(payload);
+      }
+    } on DiagnosisApiException catch (e) {
+      _setApiError(e.message, e.statusCode);
+    } catch (_) {
+      _setApiError('通信環境の良い場所で再試行してください。避難機能には影響ありません。', 0);
     }
+  }
+
+  Future<Map<String, dynamic>> _detectWithApi() async {
+    final imageBytes = await _image!.readAsBytes();
+    final imageMeta = _imageMetaFor(_image!);
+    final client = DiagnosisApiClient(_apiBaseUrl, _appKey);
+    return client.detect(
+      imageBytes: imageBytes,
+      filename: imageMeta.filename,
+      contentType: imageMeta.contentType,
+    );
   }
 
   ({String filename, MediaType contentType}) _imageMetaFor(XFile image) {
@@ -161,40 +252,54 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     );
   }
 
-  Map<String, dynamic> _buildPayload() {
+  Map<String, dynamic> _buildDetectPayload() {
     switch (_demoMode) {
       case _DemoMode.ok:
-        return _buildOkPayload();
+        return {'status': 'ok', 'detection': _buildDetectionPayload()};
       case _DemoMode.retakeNoFurniture:
-        return _buildRetakePayload(
-          reason: 'no_furniture',
-          message: '家具全体が写るように撮影してください。',
-        );
+        return {'status': 'retake', 'reason': 'no_furniture'};
       case _DemoMode.retakeNothingDetected:
-        return _buildRetakePayload(
-          reason: 'nothing_detected',
-          message: '検出できませんでした。明るい場所で全体を撮影してください。',
-        );
+        return {'status': 'retake', 'reason': 'nothing_detected'};
       case _DemoMode.retakeBraceOnly:
-        return _buildRetakePayload(
-          reason: 'brace_only',
-          message: '固定具だけが写っています。家具全体が写るように撮り直してください。',
-        );
+        return {'status': 'retake', 'reason': 'brace_only'};
       case _DemoMode.apiError:
-        return {
-          'status': 'api_error',
-          'code': 502,
-          'message': 'Vision応答不正です。もう一度お試しください。',
-        };
+        return {'status': 'retake', 'reason': 'nothing_detected'};
       case _DemoMode.auto:
-        if (_image == null) {
-          return _buildRetakePayload(
-            reason: 'no_furniture',
-            message: '家具全体が写るように撮影してください。',
-          );
-        }
-        return _buildOkPayload();
+        return {'status': 'ok', 'detection': _buildDetectionPayload()};
     }
+  }
+
+  Map<String, dynamic> _buildDetectionPayload() {
+    return {
+      'furniture': [
+        {
+          'class': 'furniture_cupboard',
+          'confidence': 0.92,
+          'bbox': [0.1, 0.05, 0.4, 0.8],
+          'profile': null,
+          'braces': [
+            {
+              'class': 'brace_l_bracket',
+              'confidence': 0.78,
+              'install_quality': 'correct',
+              'bbox': [0.18, 0.09, 0.05, 0.04],
+            },
+          ],
+        },
+        {
+          'class': 'furniture_bookshelf',
+          'confidence': 0.61,
+          'bbox': null,
+          'profile': null,
+          'braces': [],
+        },
+      ],
+      'image_issues': [],
+    };
+  }
+
+  Map<String, dynamic> _buildPayload() {
+    return _buildOkPayload();
   }
 
   Map<String, dynamic> _buildOkPayload() {
@@ -374,12 +479,29 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         _ => value,
       };
 
-  String _statusLabel(String status) => switch (status) {
-        'ok' => '成功',
-        'retake' => '再撮影',
-        'api_error' => 'エラー',
-        _ => status,
+  String _primaryActionLabel() => switch (_phase) {
+        _DiagnosisPhase.detecting => '写真を解析しています…',
+        _DiagnosisPhase.diagnosing => 'リスクを計算しています…',
+        _ => '診断する',
       };
+
+  String _phaseLabel() => switch (_phase) {
+        _DiagnosisPhase.idle => '待機',
+        _DiagnosisPhase.detecting => '解析中',
+        _DiagnosisPhase.confirmDetection => '確認',
+        _DiagnosisPhase.diagnosing => '判定中',
+        _DiagnosisPhase.result => '結果',
+        _DiagnosisPhase.retake => '再撮影',
+        _DiagnosisPhase.apiError => 'エラー',
+      };
+
+  bool get _showPrimaryButton =>
+      _phase == _DiagnosisPhase.idle ||
+      _phase == _DiagnosisPhase.detecting ||
+      _phase == _DiagnosisPhase.diagnosing ||
+      _phase == _DiagnosisPhase.result ||
+      _phase == _DiagnosisPhase.retake ||
+      _phase == _DiagnosisPhase.apiError;
 
   @override
   Widget build(BuildContext context) {
@@ -422,26 +544,75 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               const SizedBox(height: 12),
               _buildDemoModeSection(),
               const SizedBox(height: 12),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: isDark ? theme.colorScheme.primary : const Color(0xFF300808),
-                  foregroundColor: isDark ? theme.colorScheme.onPrimary : Colors.white,
+              if (_showPrimaryButton) ...[
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isDark ? theme.colorScheme.primary : const Color(0xFF300808),
+                    foregroundColor:
+                        isDark ? theme.colorScheme.onPrimary : Colors.white,
+                  ),
+                  onPressed: _isLoading ? null : _runDiagnosis,
+                  child: Text(_primaryActionLabel()),
                 ),
-                onPressed: _isLoading ? null : _runDiagnosis,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.analytics_outlined),
-                label: Text(_isLoading ? '判定中（最大2分）...' : '診断する'),
-              ),
+              ],
+              if (_phase == _DiagnosisPhase.confirmDetection &&
+                  _editedDetection != null) ...[
+                const SizedBox(height: 12),
+                _SectionCard(
+                  title: '検出結果の確認',
+                  subtitle: '修正後にリスク判定へ進みます。',
+                  child: DetectionConfirmCard(
+                    editedDetection: _editedDetection!,
+                    selectedFurnitureIndex: _selectedFurnitureIndex,
+                    isSubmitting: _isLoading,
+                    onSelectedFurnitureIndexChanged: (index) {
+                      setState(() => _selectedFurnitureIndex = index);
+                    },
+                    onFurnitureClassChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        final item = DetectionEditor.selectedFurnitureItem(
+                          _editedDetection!,
+                          _selectedFurnitureIndex,
+                        );
+                        item['class'] = value;
+                      });
+                    },
+                    onWardrobeProfileChanged: (value) {
+                      setState(() {
+                        final item = DetectionEditor.selectedFurnitureItem(
+                          _editedDetection!,
+                          _selectedFurnitureIndex,
+                        );
+                        item['profile'] = value;
+                      });
+                    },
+                    onBraceToggled: (braceClass, enabled) {
+                      setState(() {
+                        final item = DetectionEditor.selectedFurnitureItem(
+                          _editedDetection!,
+                          _selectedFurnitureIndex,
+                        );
+                        DetectionEditor.setBraceEnabled(item, braceClass, enabled);
+                      });
+                    },
+                    onRetake: () {
+                      setState(_resetFlowState);
+                      _pickImage(ImageSource.gallery);
+                    },
+                    onConfirm: _confirmAndDiagnose,
+                  ),
+                ),
+              ],
               if (_statusMessage != null) ...[
                 const SizedBox(height: 12),
                 _buildStatusBanner(_statusMessage!, payload),
               ],
-              if (payload != null) ...[
+              if (_payload != null &&
+                  (_phase == _DiagnosisPhase.result ||
+                      _phase == _DiagnosisPhase.retake ||
+                      _phase == _DiagnosisPhase.apiError)) ...[
                 const SizedBox(height: 12),
                 _buildResultArea(payload),
               ],
@@ -514,7 +685,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
             children: [
               const _Pill(label: '参考値表示'),
               _Pill(label: usingDemo ? 'デモJSON' : _connectionPillLabel()),
-              _Pill(label: '状態: ${_statusLabel(_payload?['status'] as String? ?? '待機')}'),
+              _Pill(label: '状態: ${_phaseLabel()}'),
             ],
           ),
         ],
@@ -736,25 +907,20 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         DiagnosisUnknownsCard(unknowns: unknowns),
         const SizedBox(height: 12),
         DiagnosisSourcesCard(sources: sources),
-
-        _UnknownsCard(unknowns: unknowns),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
+        OutlinedButton(
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.arrow_back),
-          label: const Text('戻る'),
+          child: const Text('戻る'),
         ),
         const SizedBox(height: 8),
-        FilledButton.icon(
+        FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Theme.of(context).colorScheme.onPrimary,
           ),
           onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
-          icon: const Icon(Icons.home_outlined),
-          label: const Text('ホームへ戻る'),
+          child: const Text('ホームへ戻る'),
         ),
-
       ],
     );
   }
@@ -763,9 +929,14 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     return DiagnosisRetakeCard(
       payload: payload,
       isLoading: _isLoading,
-      onRetry: _runDiagnosis,
-      onPickImage: () => _pickImage(ImageSource.gallery),
-
+      onRetry: () {
+        setState(_resetFlowState);
+        _runDiagnosis();
+      },
+      onPickImage: () {
+        setState(_resetFlowState);
+        _pickImage(ImageSource.gallery);
+      },
     );
   }
 
