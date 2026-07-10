@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../db/database_helper.dart';
 import '../models/diagnosis.dart';
 import '../services/diagnosis_api_client.dart';
+import '../widgets/diagnosis_result_card.dart';
 
 enum _DemoMode {
   auto,
@@ -95,7 +96,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     } catch (e) {
       payload = {
         'status': 'api_error',
-        'message': '通信に失敗しました。ネットワークを確認してもう一度お試しください。',
+        'message': '通信環境の良い場所で再試行してください。避難機能には影響ありません。',
       };
     }
 
@@ -197,71 +198,67 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   }
 
   Map<String, dynamic> _buildOkPayload() {
-    final tvRiskType = (_baseIsolated || _floorNo >= 8) ? 'slide' : 'topple';
-    final tvRiskLevel = (_baseIsolated || _floorNo >= 8) ? 'low' : 'mid';
-
     return {
       'status': 'ok',
+      'primary_index': 0,
+      'input': {
+        'shindo': 's6weak',
+        'soil': 'normal',
+        'structure': _structure,
+        'floor_no': _floorNo,
+        'base_isolated': _baseIsolated,
+      },
       'results': [
         {
           'furniture': {
-            'class': 'furniture_bookshelf',
-            'confidence': 0.91,
-            'bbox': [0.12, 0.08, 0.30, 0.78],
+            'class': 'furniture_cupboard',
+            'confidence': 0.92,
+            'bbox': [0.1, 0.05, 0.4, 0.8],
             'profile': null,
           },
-          'braces': [
-            {
-              'class': 'brace_l_bracket',
-              'confidence': 0.78,
-              'install_quality': 'correct',
-              'bbox': [0.18, 0.09, 0.05, 0.04],
-            },
-          ],
+          'braces': [],
           'risk': {
-            'level': 'high',
+            'level': 'mid',
             'type': 'topple',
-            'base_level': 'high',
+            'base_level': 'mid',
             'modifiers': [
-              {'factor': 'fix_l_bracket_correct', 'shift': -1},
+              {
+                'factor': 'track_physics',
+                'shift': 0,
+                'label':
+                    '想定震度6弱のとき、床の揺れの強さは約200ガル（1ガル＝1cm/s²、気象庁換算）です。'
+                    '食器棚が倒れ始める目安は約232ガル（国総研データ）。'
+                    'まだ届いていませんが、安全側の余裕を見た基準値162.4ガル'
+                    'を超えているため「中」と判定しました。',
+              },
             ],
+          },
+          'display': {
+            'title': '食器棚',
+            'headline': '転倒リスク：中',
+            'summary': '揺れの条件によっては、食器棚が倒れる可能性があります。',
+            'reason_chain': [
+              '想定震度6弱のとき、床の揺れの強さは約200ガル（1ガル＝1cm/s²、気象庁換算）です。'
+                  '食器棚が倒れ始める目安は約232ガル（国総研データ）。'
+                  'まだ届いていませんが、安全側の余裕を見た基準値162.4ガル'
+                  'を超えているため「中」と判定しました。',
+            ],
+            'badge': {'level': 'mid', 'label': '中', 'shape': 'diamond'},
           },
           'warnings': ['recheck_after_quakes'],
           'reference_only': true,
           'suggestions': [
             {
-              'text': 'L字金具の設置を推奨。実調査で転倒率33.5%→8.9%（約1/4）',
+              'action': 'add_l_bracket',
+              'text': 'L字金具の設置を推奨。実調査では転倒率33.5%→8.9%（約1/4）に下がっています。',
               'source': 'TFD-H',
+              'priority': 40,
             },
-          ],
-        },
-        {
-          'furniture': {
-            'class': 'furniture_tv',
-            'confidence': 0.85,
-            'bbox': null,
-            'profile': null,
-          },
-          'braces': [
             {
-              'class': 'brace_mat',
-              'confidence': 0.7,
-              'install_quality': 'correct',
-              'bbox': null,
-            },
-          ],
-          'risk': {
-            'level': tvRiskLevel,
-            'type': tvRiskType,
-            'base_level': 'high',
-            'modifiers': [],
-          },
-          'warnings': [if (tvRiskType == 'slide') 'slide_on_high_floor' else 'recheck_after_quakes'],
-          'reference_only': true,
-          'suggestions': [
-            {
-              'text': '耐震マットは単独よりL字金具との併用が有効です。',
-              'source': 'TFD-H',
+              'action': 'stud_note',
+              'text': '石膏ボードへの直接ビス止めは効きません。下地（間柱）を探して固定してください。',
+              'source': 'DESIGN',
+              'priority': 5,
             },
           ],
         },
@@ -272,6 +269,24 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         '床材の滑りやすさ',
         '固定具の劣化・締め付け',
         '実際の揺れの周期・継続時間',
+      ],
+      'sources': [
+        {
+          'id': 'NILIM',
+          'title': '国土技術政策総合研究所「什器の転倒・滑動・落下」評価法',
+          'summary': '家具の種類ごとに、倒れ始める揺れの強さ（ガル）を実験から求めたデータです。',
+        },
+        {
+          'id': 'JMA',
+          'title': '気象庁 震度と加速度の換算',
+          'summary': '想定した震度を、床の揺れの強さ（ガル）に変換する際に使っています。',
+        },
+        {
+          'id': 'TFD-H',
+          'title': '東京消防庁「熊本地震における家具等の転倒等の実態調査」戸建編',
+          'summary':
+              'L字金具で転倒率が33.5%から8.9%に低下（n=79）。耐震マット単独は39.7%（n=56）で効果が確認されていません。',
+        },
       ],
     };
   }
@@ -295,22 +310,25 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
   }
 
   Future<void> _saveHistory(Map<String, dynamic> payload) async {
-    final results = payload['results'] as List<dynamic>;
-    if (results.isEmpty) return;
+    final primary = selectPrimaryResult(payload);
+    if (primary == null) return;
 
-    final first = results.first as Map<String, dynamic>;
-    final risk = first['risk'] as Map<String, dynamic>;
-    final suggestions = (first['suggestions'] as List<dynamic>? ?? [])
+    final risk = primary['risk'] as Map<String, dynamic>?;
+    final display = primary['display'] as Map<String, dynamic>?;
+    final suggestions = (primary['suggestions'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
         .toList();
     final comment = suggestions.isNotEmpty
         ? suggestions.first['text'] as String
-        : '${_furnitureLabel(first['furniture']['class'] as String)}の診断結果を保存しました';
+        : (display?['summary'] as String?) ??
+            '${furnitureLabel(primary['furniture']['class'] as String)}の診断結果を保存しました';
+
+    final level = risk?['level'] as String? ?? 'mid';
 
     await DatabaseHelper.instance.insertDiagnosis(
       Diagnosis(
         createdAt: DateTime.now().toIso8601String(),
-        riskLevel: _historyRiskLabel(risk['level'] as String),
+        riskLevel: _historyRiskLabel(level),
         intensity: _shindoLabel(_fixedShindo),
         fixations: _structureLabel(_structure),
         comment: comment,
@@ -332,73 +350,11 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     }
   }
 
-  String _furnitureLabel(String key) => switch (key) {
-        'furniture_bookshelf' => '本棚',
-        'furniture_wardrobe' => 'タンス',
-        'furniture_cupboard' => '食器棚',
-        'furniture_refrigerator' => '冷蔵庫',
-        'furniture_tv' => 'テレビ（テレビ台含む）',
-        'furniture_microwave_stand' => '電子レンジ台',
-        'furniture_desk' => '机',
-        'furniture_other' => 'その他の家具（判定対象外）',
-        _ => key,
-      };
-
-  String _braceLabel(String key) => switch (key) {
-        'brace_tension_rod' => '突っ張り棒',
-        'brace_l_bracket' => 'L字金具',
-        'brace_mat' => '耐震マット',
-        'brace_belt' => 'ベルト・チェーン',
-        'brace_stopper' => 'ストッパー・転倒防止板',
-        _ => key,
-      };
-
-  String _qualityLabel(String key) => switch (key) {
-        'correct' => '適切に設置',
-        'loose' => '緩み・傾きあり（注意）',
-        'wrong_position' => '取付位置が不適切（要見直し）',
-        'unverified' => '写真では確認できず',
-        _ => key,
-      };
-
-  String _warningLabel(String key) => switch (key) {
-        'recheck_after_quakes' => '繰り返しの揺れで固定具は緩みます。震度4程度の地震の後は点検を。',
-        'mat_ineffective_on_heavy' => '耐震マット単独は重い家具では効果が確認されていません。L字金具等の追加を推奨。',
-        'slide_on_high_floor' => '高層階では家具が「移動」するリスクがあります。キャスターは固定を。',
-        _ => key,
-      };
-
-  String _riskLevelLabel(String level) => switch (level) {
-        'high' => '高',
-        'mid' => '中',
-        'low' => '低',
-        _ => level,
-      };
-
   String _historyRiskLabel(String level) => switch (level) {
         'high' => '危険',
         'mid' => '注意',
         'low' => 'おおむね安全',
         _ => '注意',
-      };
-
-  String _riskTypeLabel(String type) => switch (type) {
-        'topple' => '転倒リスク',
-        'slide' => '移動リスク',
-        _ => type,
-      };
-
-  IconData _riskTypeIcon(String type) => switch (type) {
-        'topple' => Icons.trending_up,
-        'slide' => Icons.swap_horiz,
-        _ => Icons.info_outline,
-      };
-
-  Color _riskColor(String level) => switch (level) {
-        'high' => Colors.red.shade700,
-        'mid' => Colors.orange.shade700,
-        'low' => Colors.green.shade700,
-        _ => Colors.grey.shade700,
       };
 
   String _shindoLabel(String value) => switch (value) {
@@ -726,98 +682,48 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
     final results =
         (payload['results'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
     final unknowns = (payload['unknowns'] as List<dynamic>? ?? []).cast<String>();
+    final sources =
+        (payload['sources'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final primary = selectPrimaryResult(payload);
+    final otherCount = results.length - 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionCard(
           title: '診断結果',
-          subtitle: 'results は高リスク順に並んでいる前提です。',
+          subtitle: '最もリスクの高い家具を1件表示しています。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final result in results) ...[
-                _ResultCard(
-                  result: result,
-                  furnitureLabel: _furnitureLabel,
-                  braceLabel: _braceLabel,
-                  qualityLabel: _qualityLabel,
-                  warningLabel: _warningLabel,
-                  riskLevelLabel: _riskLevelLabel,
-                  riskTypeLabel: _riskTypeLabel,
-                  riskTypeIcon: _riskTypeIcon,
-                  riskColor: _riskColor,
-                ),
+              if (primary != null) DiagnosisResultCard(result: primary),
+              if (otherCount > 0) ...[
                 const SizedBox(height: 12),
+                Text(
+                  '他に $otherCount件の家具を検出しました（最もリスクの高いものを表示しています）',
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ],
           ),
         ),
         const SizedBox(height: 12),
-        _UnknownsCard(unknowns: unknowns),
+        DiagnosisUnknownsCard(unknowns: unknowns),
+        const SizedBox(height: 12),
+        DiagnosisSourcesCard(sources: sources),
       ],
     );
   }
 
   Widget _buildRetakeOrErrorCard(Map<String, dynamic> payload) {
-    final status = payload['status'] as String;
-    final color = switch (status) {
-      'api_error' => Colors.red,
-      _ => Colors.orange,
-    };
-
-    final title = switch (status) {
-      'api_error' => 'APIエラー',
-      _ => '再撮影が必要です',
-    };
-
-    final reason = payload['reason'] as String?;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.refresh, color: color),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            (payload['message'] as String?) ?? _retakeMessageForReason(reason),
-            style: const TextStyle(fontSize: 15),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton(
-                onPressed: _isLoading ? null : _runDiagnosis,
-                child: const Text('再試行'),
-              ),
-              OutlinedButton(
-                onPressed: () => _pickImage(ImageSource.gallery),
-                child: const Text('画像を選び直す'),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return DiagnosisRetakeCard(
+      payload: payload,
+      isLoading: _isLoading,
+      onRetry: _runDiagnosis,
+      onPickImage: () => _pickImage(ImageSource.gallery),
     );
   }
 
@@ -903,290 +809,6 @@ class _Pill extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(color: Colors.white, fontSize: 12),
-      ),
-    );
-  }
-}
-
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({
-    required this.result,
-    required this.furnitureLabel,
-    required this.braceLabel,
-    required this.qualityLabel,
-    required this.warningLabel,
-    required this.riskLevelLabel,
-    required this.riskTypeLabel,
-    required this.riskTypeIcon,
-    required this.riskColor,
-  });
-
-  final Map<String, dynamic> result;
-  final String Function(String) furnitureLabel;
-  final String Function(String) braceLabel;
-  final String Function(String) qualityLabel;
-  final String Function(String) warningLabel;
-  final String Function(String) riskLevelLabel;
-  final String Function(String) riskTypeLabel;
-  final IconData Function(String) riskTypeIcon;
-  final Color Function(String) riskColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final furniture = result['furniture'] as Map<String, dynamic>;
-    final braces =
-        (result['braces'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-    final risk = result['risk'] as Map<String, dynamic>;
-    final warnings = (result['warnings'] as List<dynamic>? ?? []).cast<String>();
-    final suggestions =
-        (result['suggestions'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-    final referenceOnly = result['reference_only'] as bool? ?? false;
-    final bbox = furniture['bbox'];
-
-    final level = risk['level'] as String;
-    final color = riskColor(level);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      furnitureLabel(furniture['class'] as String),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '信頼度 ${(furniture['confidence'] as num).toDouble().toStringAsFixed(2)}',
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
-                    ),
-                  ],
-                ),
-              ),
-              if (referenceOnly)
-                const Chip(
-                  label: Text('参考値'),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _RiskBadge(
-                color: color,
-                  icon: Icons.change_history,
-                label: riskLevelLabel(level),
-              ),
-              _RiskBadge(
-                color: Colors.black87,
-                icon: riskTypeIcon(risk['type'] as String),
-                label: riskTypeLabel(risk['type'] as String),
-              ),
-                if (bbox is List)
-                  const _RiskBadge(
-                  color: Colors.blueGrey,
-                  icon: Icons.crop_free,
-                  label: 'bboxあり',
-                ),
-            ],
-          ),
-          if (braces.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text('固定具', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final brace in braces)
-                  _SmallChip(
-                    label: braceLabel(brace['class'] as String),
-                    subLabel: qualityLabel(brace['install_quality'] as String),
-                  ),
-              ],
-            ),
-          ],
-          if (warnings.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text('警告', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...warnings.map(
-              (warning) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text(warningLabel(warning))),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (suggestions.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text('提案', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...suggestions.map(
-              (suggestion) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.tips_and_updates_outlined, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(suggestion['text'] as String),
-                          if ((suggestion['source'] as String?)?.isNotEmpty ?? false)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                suggestion['source'] as String,
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.55),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (result['risk'] is Map<String, dynamic>) ...[
-            const SizedBox(height: 8),
-            Text(
-              '対策前は ${risk['base_level'] as String} でした',
-              style: TextStyle(color: Colors.black.withValues(alpha: 0.52), fontSize: 12),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SmallChip extends StatelessWidget {
-  const _SmallChip({required this.label, required this.subLabel});
-
-  final String label;
-  final String subLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 2),
-          Text(subLabel, style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.58))),
-        ],
-      ),
-    );
-  }
-}
-
-class _RiskBadge extends StatelessWidget {
-  const _RiskBadge({
-    required this.color,
-    required this.icon,
-    required this.label,
-  });
-
-  final Color color;
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-}
-
-class _UnknownsCard extends StatelessWidget {
-  const _UnknownsCard({required this.unknowns});
-
-  final List<String> unknowns;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionCard(
-      title: 'この診断でわからないこと',
-      subtitle: '参考値であることを必ず明示します。',
-      child: Material(
-        color: Colors.transparent,
-        child: ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: const EdgeInsets.only(top: 8),
-          title: const Text('折りたたんで表示'),
-          children: [
-            ...unknowns.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.help_outline, size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text(item)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
