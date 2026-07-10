@@ -72,10 +72,10 @@ class _DiagnosisSectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.06)),
+        border: Border.all(color: theme.colorScheme.onSurface.withValues(alpha: 0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -95,7 +95,7 @@ class _DiagnosisSectionCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.62)),
+            style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.62)),
           ),
           const SizedBox(height: 14),
           child,

@@ -27,7 +27,7 @@ class HistoryDetailScreen extends StatelessWidget {
               child: Text(
                 date,
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                   fontSize: 14,
                 ),
               ),
@@ -65,7 +65,7 @@ class HistoryDetailScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -135,7 +135,7 @@ class HistoryDetailScreen extends StatelessWidget {
           '詳細データは保存されていません。',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.65),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
             fontSize: 14,
           ),
         ),
