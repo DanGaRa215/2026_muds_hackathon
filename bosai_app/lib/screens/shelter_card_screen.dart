@@ -1,5 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../db/database_helper.dart';
 import '../db/shelter_database.dart';
@@ -59,6 +67,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
       (registeredHome['lat'] as num).toDouble(),
       (registeredHome['lon'] as num).toDouble(),
     );
+    final tileProvider = await _loadTileProvider();
     if (routeService.isInRoutingArea(homeLocation)) {
       final straightCandidates = HomeAreaService.nearestSheltersByStraightLine(
         home: homeLocation,
@@ -87,6 +96,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         shelters: shelters.take(_displayCandidateLimit).toList(),
         homeLocation: homeLocation,
         routesByShelterId: routesByShelterId,
+        tileProvider: tileProvider,
       );
     }
 
@@ -101,7 +111,32 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
     return _ShelterCandidates(
       shelters: nearest.shelters.map(HomeAreaService.toShelterInfo).toList(),
       homeLocation: homeLocation,
+      tileProvider: tileProvider,
     );
+  }
+
+  Future<PmTilesVectorTileProvider?> _loadTileProvider() async {
+    try {
+      final localPath =
+          await _copyAssetToLocal(HomeAreaService.tokyo23PmtilesAsset);
+      return PmTilesVectorTileProvider.fromSource(localPath);
+    } catch (e) {
+      debugPrint('Shelter proposal map unavailable: $e');
+      return null;
+    }
+  }
+
+  Future<String> _copyAssetToLocal(String assetName) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/$assetName');
+    if (!await file.exists() || file.lengthSync() == 0) {
+      final data = await rootBundle.load('assets/$assetName');
+      await file.writeAsBytes(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        flush: true,
+      );
+    }
+    return file.path;
   }
 
   @override
@@ -175,156 +210,424 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         : HomeAreaService.distanceM(homeLocation, shelter.latLng);
     final supportsCurrentMode =
         shelterSupportsMode(shelter, widget.disasterMode);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final mapHeight =
+            (constraints.maxHeight * 0.34).clamp(196.0, 280.0).toDouble();
+
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: _textColor, width: 2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '第${_candidateIndex + 1}候補：${shelter.name}',
-                    style: const TextStyle(
-                      color: _textColor,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _buildTypeLabels(shelter),
-                  if (!supportsCurrentMode) ...[
-                    const SizedBox(height: 12),
-                    _buildModeNotice(shelter),
-                  ],
-                  const SizedBox(height: 20),
-                  Text(
-                    '海抜: ${HomeAreaService.elevationLabel(shelter.elevationM)}',
-                    style: const TextStyle(
-                      color: _textColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '収容人数: ${HomeAreaService.capacityLabel(shelter.capacity)}',
-                    style: const TextStyle(
-                      color: _textColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (route != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      '経路距離: ${HomeAreaService.distanceLabel(route.distanceM)} / '
-                      '徒歩: ${route.estMinutes.ceil()}分',
-                      style: const TextStyle(
-                        color: _textColor,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ] else if (straightDistanceM != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      '直線距離: ${HomeAreaService.distanceLabel(straightDistanceM)} / '
-                      '方位: ${HomeAreaService.direction8(homeLocation!, shelter.latLng)}',
-                      style: const TextStyle(
-                        color: _textColor,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: SizedBox(
+                height: mapHeight,
+                child: _buildCandidateMap(candidates, shelter),
               ),
             ),
-            const SizedBox(height: 20),
-            if (widget.disasterMode == DisasterMode.flood) ...[
-              _buildFloodGuidance(),
-              const SizedBox(height: 16),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 64,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _textColor,
-                        side: const BorderSide(color: _textColor, width: 2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: _textColor, width: 2),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      onPressed: () {
-                        if (_candidateIndex + 1 >= shelterCount) {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const FinalInstructionScreen(),
-                            ),
-                          );
-                          return;
-                        }
-                        setState(() => _candidateIndex++);
-                      },
-                      child: const Text('NO（他の候補を見る）'),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 64,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _textColor,
-                        foregroundColor: _backgroundColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => NaviScreen(
-                              shelter: shelter,
-                              mode: widget.disasterMode,
-                              initialRoute: route,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            '第${_candidateIndex + 1}候補：${shelter.name}',
+                            style: const TextStyle(
+                              color: _textColor,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              height: 1.3,
                             ),
                           ),
-                        );
-                      },
-                      child: const Text('YES（ここへ避難する）'),
+                          const SizedBox(height: 14),
+                          _buildTypeLabels(shelter),
+                          if (!supportsCurrentMode) ...[
+                            const SizedBox(height: 12),
+                            _buildModeNotice(shelter),
+                          ],
+                          const SizedBox(height: 20),
+                          Text(
+                            '海抜: ${HomeAreaService.elevationLabel(shelter.elevationM)}',
+                            style: const TextStyle(
+                              color: _textColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '収容人数: ${HomeAreaService.capacityLabel(shelter.capacity)}',
+                            style: const TextStyle(
+                              color: _textColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (route != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              '経路距離: ${HomeAreaService.distanceLabel(route.distanceM)} / '
+                              '徒歩: ${route.estMinutes.ceil()}分',
+                              style: const TextStyle(
+                                color: _textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ] else if (straightDistanceM != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              '直線距離: ${HomeAreaService.distanceLabel(straightDistanceM)} / '
+                              '方位: ${HomeAreaService.direction8(homeLocation!, shelter.latLng)}',
+                              style: const TextStyle(
+                                color: _textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 20),
+                    if (widget.disasterMode == DisasterMode.flood) ...[
+                      _buildFloodGuidance(),
+                      const SizedBox(height: 16),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 64,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _textColor,
+                                side: const BorderSide(
+                                  color: _textColor,
+                                  width: 2,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: () {
+                                if (_candidateIndex + 1 >= shelterCount) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const FinalInstructionScreen(),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setState(() => _candidateIndex++);
+                              },
+                              child: const Text('NO（他の候補を見る）'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 64,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _textColor,
+                                foregroundColor: _backgroundColor,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => NaviScreen(
+                                      shelter: shelter,
+                                      mode: widget.disasterMode,
+                                      initialRoute: route,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: const Text('YES（ここへ避難する）'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCandidateMap(
+    _ShelterCandidates candidates,
+    ShelterInfo selectedShelter,
+  ) {
+    final homeLocation = candidates.homeLocation;
+    final tileProvider = candidates.tileProvider;
+    if (homeLocation == null) {
+      return const SizedBox.shrink();
+    }
+    if (tileProvider == null) {
+      return _buildMapUnavailable();
+    }
+
+    final selectedIndex = candidates.shelters.indexWhere(
+      (candidate) => candidate.shelterId == selectedShelter.shelterId,
+    );
+    final route = candidates.routeFor(selectedShelter);
+    final fitPoints = <LatLng>[
+      homeLocation,
+      for (final shelter in candidates.shelters) shelter.latLng,
+      selectedShelter.latLng,
+      if (route != null) ...route.geometry,
+    ];
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8E8E8),
+        border: Border.all(color: const Color(0x33300808)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: FlutterMap(
+        key: ValueKey('shelter-proposal-map-${selectedShelter.shelterId}'),
+        options: MapOptions(
+          initialCenter: homeLocation,
+          initialZoom: 15,
+          initialCameraFit: CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(fitPoints),
+            padding: const EdgeInsets.all(36),
+            maxZoom: 16,
+          ),
+          minZoom: 10,
+          maxZoom: 16,
+        ),
+        children: [
+          VectorTileLayer(
+            theme: _buildRoadsTheme(),
+            tileProviders: TileProviders({
+              'pmtiles': tileProvider,
+            }),
+          ),
+          if (route != null && route.geometry.length >= 2)
+            PolylineLayer(
+              polylines: [
+                Polyline(
+                  points: route.geometry,
+                  color: Colors.white,
+                  strokeWidth: 9,
+                ),
+                Polyline(
+                  points: route.geometry,
+                  color: const Color(0xFFFF6D00),
+                  strokeWidth: 7,
                 ),
               ],
+            ),
+          MarkerLayer(
+            markers: [
+              _buildHomeMarker(homeLocation),
+              for (var i = 0; i < candidates.shelters.length; i++)
+                _buildShelterMarker(
+                  candidates.shelters[i],
+                  i,
+                  i == selectedIndex,
+                ),
+            ],
+          ),
+          if (selectedIndex >= 0)
+            Positioned(
+              top: 8,
+              left: 8,
+              right: 8,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: _buildSelectedShelterMapLabel(
+                  selectedIndex,
+                  selectedShelter,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMapUnavailable() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0x33300808)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.map_outlined, color: _textColor, size: 40),
+            SizedBox(height: 8),
+            Text(
+              '地図を読み込めませんでした',
+              style: TextStyle(
+                color: _textColor,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Marker _buildHomeMarker(LatLng homeLocation) {
+    return Marker(
+      point: homeLocation,
+      width: 30,
+      height: 30,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(blurRadius: 8, color: Color(0x33000000)),
+          ],
+        ),
+        child: const Icon(
+          Icons.my_location,
+          color: Color(0xFF1976D2),
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Marker _buildShelterMarker(
+    ShelterInfo shelter,
+    int index,
+    bool isSelected,
+  ) {
+    return Marker(
+      point: shelter.latLng,
+      width: 46,
+      height: 46,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_candidateIndex != index) {
+            setState(() => _candidateIndex = index);
+          }
+        },
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Icon(
+              Icons.location_on,
+              color: isSelected
+                  ? const Color(0xFFE53935)
+                  : const Color(0xFF6D3D3D),
+              size: isSelected ? 40 : 36,
+            ),
+            Positioned(
+              top: isSelected ? 8 : 7,
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isSelected ? 12 : 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedShelterMapLabel(
+    int selectedIndex,
+    ShelterInfo shelter,
+  ) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: const [
+          BoxShadow(blurRadius: 8, color: Color(0x33000000)),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Text(
+          '第${selectedIndex + 1}候補 ${shelter.name}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: _textColor,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  vtr.Theme _buildRoadsTheme() {
+    return vtr.ThemeReader().read({
+      'version': 8,
+      'sources': {
+        'pmtiles': {
+          'type': 'vector',
+          'url': 'pmtiles',
+        },
+      },
+      'layers': [
+        {
+          'id': 'background',
+          'type': 'background',
+          'paint': {
+            'background-color': '#e8e8e8',
+          },
+        },
+        {
+          'id': 'roads-line',
+          'type': 'line',
+          'source': 'pmtiles',
+          'source-layer': 'roads',
+          'paint': {
+            'line-color': '#B8C1CC',
+            'line-width': 2.0,
+          },
+        },
+      ],
+    });
   }
 
   Widget _buildNeedsHomeRegistrationState() {
@@ -489,12 +792,14 @@ class _ShelterCandidates {
     this.shelters = const <ShelterInfo>[],
     this.homeLocation,
     this.routesByShelterId = const <String, RouteResult>{},
+    this.tileProvider,
     this.needsHomeRegistration = false,
   });
 
   final List<ShelterInfo> shelters;
   final LatLng? homeLocation;
   final Map<String, RouteResult> routesByShelterId;
+  final PmTilesVectorTileProvider? tileProvider;
   final bool needsHomeRegistration;
 
   RouteResult? routeFor(ShelterInfo shelter) =>
