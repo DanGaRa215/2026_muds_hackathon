@@ -73,12 +73,15 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const mainColor = Color(0xFF1B5E20);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bgColor = isDark ? theme.colorScheme.surface : const Color(0xFFE7FBF0);
+    final fgColor = isDark ? theme.colorScheme.onSurface : const Color(0xFF300808);
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: mainColor,
-        foregroundColor: Colors.white,
-        title: const Text('オフラインマップ表示 (検証用デモ)',
+        backgroundColor: bgColor,
+        foregroundColor: fgColor,
+        title: const Text('東京23区オフラインマップ',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         actions: [
           IconButton(

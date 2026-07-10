@@ -542,8 +542,6 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
               const SizedBox(height: 12),
               _buildInputSection(),
               const SizedBox(height: 12),
-              _buildDemoModeSection(),
-              const SizedBox(height: 12),
               if (_showPrimaryButton) ...[
                 FilledButton(
                   style: FilledButton.styleFrom(
