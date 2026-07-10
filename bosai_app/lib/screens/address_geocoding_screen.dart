@@ -21,8 +21,7 @@ class AddressGeocodingScreen extends StatefulWidget {
 
 class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
   final TextEditingController _zipController = TextEditingController(); // 郵便番号用
-  final TextEditingController _addressController =
-      TextEditingController(); // 住所用
+  final TextEditingController _addressController = TextEditingController(); // 住所用
   final custom_geo.Geocoding _geocoding = custom_geo.Geocoding();
   final MapController _mapController = MapController();
 
@@ -57,7 +56,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
         final data = json.decode(response.body);
         if (data['results'] != null && data['results'].isNotEmpty) {
           final result = data['results'][0];
-          // 都道府県 + 市区町村 + 町域名 を結合
           final fullAddress =
               "${result['address1']}${result['address2']}${result['address3']}";
 
@@ -67,7 +65,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
             _statusText = "📍 住所を検出しました！続けて地図へ反映します...";
           });
 
-          // 自動で次のステップ（地図表示）へ進む
           await _updateMapPreview(fullAddress);
         } else {
           setState(() => _statusText = "該当する住所が見つかりませんでした。");
@@ -96,7 +93,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
       final location = locations.first;
       final targetCenter = LatLng(location.latitude, location.longitude);
 
-      // 地図のカメラを移動
       _mapController.move(targetCenter, 15.0);
 
       setState(() {
@@ -109,7 +105,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
     }
   }
 
-  /// 🌍 識別キーの判定
   String? _getCityKey(String address) {
     return HomeAreaService.matchedTokyo23Ward(address);
   }
@@ -149,7 +144,6 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
       );
       if (!mounted) return;
 
-      // SQLiteに最終保存
       await DatabaseHelper.instance.saveHomeLocation(
         address: address,
         lat: _previewCenter.latitude,
@@ -226,8 +220,14 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const mainColor = Color(0xFF300808);
-    const subBackgroundColor = Color(0xFFE7FBF0);
+    // 💡 テーマ設定（ライト/ダーク）を動的に検出
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 🎨 モードに応じてカラーパレットを動的に切り替え
+    final mainColor = isDark ? theme.colorScheme.primary : const Color(0xFF300808);
+    final subBackgroundColor = isDark ? theme.colorScheme.background : const Color(0xFFE7FBF0);
+    final formFillColor = theme.colorScheme.surface; // 白固定からテーマ連動（グレー）へ
 
     return Scaffold(
       backgroundColor: subBackgroundColor,
@@ -251,15 +251,16 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
                     controller: _zipController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    style: TextStyle(color: theme.colorScheme.onSurface),
                     decoration: InputDecoration(
-                      fillColor: Colors.white,
+                      fillColor: formFillColor,
                       filled: true,
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                       labelText: '郵便番号 (ハイフンなし)',
                       hintText: '1340001(7桁)',
                       prefixIcon:
-                          const Icon(Icons.local_post_office, color: mainColor),
+                          Icon(Icons.local_post_office, color: mainColor),
                     ),
                   ),
                 ),
@@ -271,7 +272,7 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: mainColor,
-                        foregroundColor: Colors.white,
+                        foregroundColor: isDark ? theme.colorScheme.onPrimary : Colors.white,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -285,16 +286,17 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
             ),
             const SizedBox(height: 12),
 
-            // 📝 ステップ2: 下の住所表示フォーム（微調整できるように手動入力も可能）
+            // 📝 ステップ2: 下の住所表示フォーム
             TextField(
               controller: _addressController,
+              style: TextStyle(color: theme.colorScheme.onSurface),
               decoration: InputDecoration(
-                fillColor: Colors.white,
+                fillColor: formFillColor,
                 filled: true,
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 labelText: '取得された住所 (番地などは追記してください)',
-                prefixIcon: const Icon(Icons.home, color: mainColor),
+                prefixIcon: Icon(Icons.home, color: mainColor),
               ),
               onChanged: (val) {
                 if (val.isNotEmpty) _updateMapPreview(val);
@@ -306,14 +308,14 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: theme.colorScheme.surface.withOpacity(0.8),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 _statusText,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13,
-                    color: mainColor,
+                    color: theme.colorScheme.onSurface,
                     fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
               ),
@@ -362,8 +364,8 @@ class _AddressGeocodingScreenState extends State<AddressGeocodingScreen> {
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _hasSearched ? Colors.green[800] : Colors.grey,
-                  foregroundColor: Colors.white,
+                      _hasSearched ? (isDark ? theme.colorScheme.primaryContainer : Colors.green[700]) : Colors.grey,
+                  foregroundColor: _hasSearched ? (isDark ? theme.colorScheme.onPrimaryContainer : Colors.white) : Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
