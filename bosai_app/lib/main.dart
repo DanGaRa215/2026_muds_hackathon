@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import 'app_theme.dart';
 import 'db/database_helper.dart';
 import 'db/shelter_database.dart';
 import 'screens/home_screen.dart';
 import 'services/eew_manager.dart';
-
-// 🎯 全画面からアクセスできるテーマ切り替え用のNotifierを定義
-final ValueNotifier<ThemeMode> appThemeNotifier = ValueNotifier(ThemeMode.system);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
