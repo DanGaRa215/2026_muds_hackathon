@@ -57,6 +57,8 @@ bool isCoastalPoint({
 ///   − [kSurgeCoastDistanceWeight]*海岸距離（昇順=良い）。
 /// surge/tsunami どちらにも非対応の避難所は大幅減点。
 /// 距離はルート距離（あれば）を優先し、無ければ直線距離。
+/// ルート情報がある避難所同士では、高潮スコアより先に
+/// フォールバックなし・ペナルティ小を優先する。
 /// 係数は ShelterRecommender の津波スコアリングと共有する。
 List<ShelterInfo> rankSheltersForSurge({
   required List<ShelterInfo> shelters,
@@ -78,6 +80,22 @@ List<ShelterInfo> rankSheltersForSurge({
     return sc;
   }
 
-  final ranked = [...shelters]..sort((a, b) => score(a).compareTo(score(b)));
+  int compareRouteSafety(ShelterInfo a, ShelterInfo b) {
+    final aRoute = routesByShelterId[a.shelterId];
+    final bRoute = routesByShelterId[b.shelterId];
+    if (aRoute == null && bRoute == null) return 0;
+    if (aRoute == null) return 1;
+    if (bRoute == null) return -1;
+    final fallbackOrder =
+        (aRoute.usedFallback ? 1 : 0).compareTo(bRoute.usedFallback ? 1 : 0);
+    if (fallbackOrder != 0) return fallbackOrder;
+    return aRoute.penaltyM.compareTo(bRoute.penaltyM);
+  }
+
+  final ranked = [...shelters]..sort((a, b) {
+      final safetyOrder = compareRouteSafety(a, b);
+      if (safetyOrder != 0) return safetyOrder;
+      return score(a).compareTo(score(b));
+    });
   return ranked;
 }
