@@ -112,7 +112,18 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         backgroundColor: _backgroundColor,
         foregroundColor: _textColor,
         title: const Text('近い避難所候補'),
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: '戻る',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'ホームへ戻る',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          ),
+        ],
       ),
       body: SafeArea(
         child: FutureBuilder<_ShelterCandidates>(
@@ -522,7 +533,24 @@ class FinalInstructionScreen extends StatelessWidget {
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
               const SizedBox(height: 32),
-              FilledButton(
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white, width: 2),
+                  minimumSize: const Size.fromHeight(64),
+                ),
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text(
+                  '戻る',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.orange.shade800,
@@ -530,9 +558,14 @@ class FinalInstructionScreen extends StatelessWidget {
                 ),
                 onPressed: () =>
                     Navigator.of(context).popUntil((r) => r.isFirst),
-                child: const Text('ホームへ戻る',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.home_outlined),
+                label: const Text(
+                  'ホームへ戻る',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
