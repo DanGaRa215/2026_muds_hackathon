@@ -183,6 +183,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
 
   Future<void> _confirmAndDiagnose() async {
     if (_editedDetection == null) return;
+    assert(_detection != null);
 
     setState(() => _phase = _DiagnosisPhase.diagnosing);
 
@@ -296,10 +297,6 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       ],
       'image_issues': [],
     };
-  }
-
-  Map<String, dynamic> _buildPayload() {
-    return _buildOkPayload();
   }
 
   Map<String, dynamic> _buildOkPayload() {
@@ -614,7 +611,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
                       _phase == _DiagnosisPhase.retake ||
                       _phase == _DiagnosisPhase.apiError)) ...[
                 const SizedBox(height: 12),
-                _buildResultArea(payload),
+                _buildResultArea(_payload!),
               ],
               const SizedBox(height: 12),
               _buildEnvNote(),
