@@ -26,7 +26,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'bosai_app.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE shelters(
@@ -47,7 +47,8 @@ class DatabaseHelper {
             risk_level TEXT NOT NULL,
             intensity TEXT NOT NULL,
             fixations TEXT NOT NULL,
-            comment TEXT NOT NULL
+            comment TEXT NOT NULL,
+            payload_json TEXT
           )
         ''');
         await db.execute('''
@@ -70,6 +71,11 @@ class DatabaseHelper {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createPrecomputedRoutes(db);
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE diagnoses ADD COLUMN payload_json TEXT',
+          );
         }
         await _ensureHomeInfoColumns(db);
         await _repairHomeInfo(db);
@@ -252,6 +258,18 @@ class DatabaseHelper {
     final db = await database;
     final rows = await db.query('diagnoses', orderBy: 'id DESC');
     return rows.map(Diagnosis.fromMap).toList();
+  }
+
+  Future<Diagnosis?> getDiagnosisById(int id) async {
+    final db = await database;
+    final rows = await db.query(
+      'diagnoses',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Diagnosis.fromMap(rows.first);
   }
 
   Future<void> _ensureHomeInfoRow(Database db) async {

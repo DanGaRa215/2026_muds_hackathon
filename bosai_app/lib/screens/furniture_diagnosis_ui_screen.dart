@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../services/diagnosis_api_client.dart';
 import '../utils/detection_editor.dart';
 import '../widgets/detection_confirm_card.dart';
 import '../widgets/diagnosis_result_card.dart';
+import '../widgets/diagnosis_result_panel.dart';
 
 enum _DiagnosisPhase {
   idle,
@@ -435,6 +437,7 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
         intensity: _shindoLabel(_fixedShindo),
         fixations: _structureLabel(_structure),
         comment: comment,
+        payloadJson: jsonEncode(payload),
       ),
     );
   }
@@ -869,41 +872,10 @@ class _FurnitureDiagnosisUiScreenState extends State<FurnitureDiagnosisUiScreen>
       );
     }
 
-    final results =
-        (payload['results'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-    final unknowns = (payload['unknowns'] as List<dynamic>? ?? []).cast<String>();
-    final sources =
-        (payload['sources'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-    final primary = selectPrimaryResult(payload);
-    final otherCount = results.length - 1;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionCard(
-          title: '診断結果',
-          subtitle: '最もリスクの高い家具を1件表示しています。',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (primary != null) DiagnosisResultCard(result: primary),
-              if (otherCount > 0) ...[
-                const SizedBox(height: 12),
-                Text(
-                  '他に $otherCount件の家具を検出しました（最もリスクの高いものを表示しています）',
-                  style: TextStyle(
-                    color: Colors.black.withValues(alpha: 0.62),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        DiagnosisUnknownsCard(unknowns: unknowns),
-        const SizedBox(height: 12),
-        DiagnosisSourcesCard(sources: sources),
+        DiagnosisResultPanel(payload: payload),
         const SizedBox(height: 12),
         OutlinedButton(
           onPressed: () => Navigator.of(context).maybePop(),

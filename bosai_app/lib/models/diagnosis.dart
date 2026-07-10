@@ -4,8 +4,9 @@ class Diagnosis {
   final String createdAt; // ISO8601
   final String riskLevel; // '危険' | '注意' | 'おおむね安全'
   final String intensity; // 想定震度（例: '震度6強'）
-  final String fixations; // カンマ区切りの固定状況
+  final String fixations; // カンマ区切りの固定状況（一覧用・建物構造ラベルが入る既知仕様）
   final String comment;
+  final String? payloadJson; // 診断APIレスポンス全体（詳細表示用）
 
   const Diagnosis({
     this.id,
@@ -14,6 +15,7 @@ class Diagnosis {
     required this.intensity,
     required this.fixations,
     required this.comment,
+    this.payloadJson,
   });
 
   factory Diagnosis.fromMap(Map<String, dynamic> map) => Diagnosis(
@@ -23,6 +25,7 @@ class Diagnosis {
         intensity: map['intensity'] as String,
         fixations: map['fixations'] as String,
         comment: map['comment'] as String,
+        payloadJson: map['payload_json'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -31,5 +34,6 @@ class Diagnosis {
         'intensity': intensity,
         'fixations': fixations,
         'comment': comment,
+        if (payloadJson != null) 'payload_json': payloadJson,
       };
 }
