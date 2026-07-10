@@ -16,7 +16,7 @@ class RoutingWeights {
   static const double waterStrongFlood = 600;
   static const double waterStrongThresholdM = 50;
 
-  // 橋(ソフトペナルティ。江戸川区では橋が広域避難の必須経路のため一律禁止しない)
+  // 橋(ソフトペナルティ。河川横断が避難の必須経路になるため一律禁止しない)
   static const double bridgeEarthquake = 600;
   static const double bridgeFlood = 300;
 

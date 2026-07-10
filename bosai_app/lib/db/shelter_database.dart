@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
@@ -6,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/gsi_shelter.dart';
+import '../routing/models.dart';
 
 /// 国土地理院ベースの避難所 DB（assets/shelters.db）へのアクセス。
 ///
@@ -35,7 +37,7 @@ import '../models/gsi_shelter.dart';
 ///
 /// ## 既存 DB との関係
 /// - [DatabaseHelper] の bosai_app.db … 診断履歴・自宅情報・簡易 shelters（デモ1件）
-/// - RoutingDatabase の routing.db … 経路グラフ + nearest_node 付き shelters（江戸川等）
+/// - RoutingDatabase の routing.db … 経路グラフ + nearest_node 付き shelters（東京23区）
 /// - 本 DB … 発生時フローの状況チェック向け GSI スナップショット（読み取り専用）
 class ShelterDatabase {
   ShelterDatabase._(this._db);
@@ -101,4 +103,87 @@ class ShelterDatabase {
     final rows = await _db.query('shelters', orderBy: 'city_code, name');
     return rows.map(GsiShelter.fromMap).toList();
   }
+
+  Future<NearestSheltersResult> queryNearest({
+    required double lat,
+    required double lon,
+    required DisasterMode mode,
+    int limit = 5,
+    double radiusM = 4000,
+    bool preferDisasterType = true,
+  }) async {
+    final modeWhere = mode == DisasterMode.earthquake
+        ? '(t_earthquake = 1 OR t_fire = 1)'
+        : '(t_flood = 1 OR t_storm_surge = 1)';
+    final distanceExpr = _distanceExpr();
+    final radiusScore = math.pow(radiusM / 111320.0, 2).toDouble();
+    final distanceArgs = _distanceArgs(lat, lon);
+
+    if (preferDisasterType) {
+      final filteredRows = await _queryNearestRows(
+        lat: lat,
+        lon: lon,
+        where: '$modeWhere AND $distanceExpr <= ?',
+        whereArgs: [...distanceArgs, radiusScore],
+        limit: limit,
+      );
+      if (filteredRows.isNotEmpty) {
+        return NearestSheltersResult(
+          shelters: filteredRows.map(GsiShelter.fromMap).toList(),
+          usedDisasterTypeFallback: false,
+        );
+      }
+    }
+
+    final fallbackRows = await _queryNearestRows(
+      lat: lat,
+      lon: lon,
+      limit: limit,
+    );
+    return NearestSheltersResult(
+      shelters: fallbackRows.map(GsiShelter.fromMap).toList(),
+      usedDisasterTypeFallback: preferDisasterType,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> _queryNearestRows({
+    required double lat,
+    required double lon,
+    String? where,
+    List<Object?> whereArgs = const [],
+    required int limit,
+  }) {
+    final distanceExpr = _distanceExpr();
+    final args = <Object?>[
+      ..._distanceArgs(lat, lon),
+      ...whereArgs,
+      limit,
+    ];
+    return _db.rawQuery('''
+      SELECT *, $distanceExpr AS distance_score
+      FROM shelters
+      ${where == null ? '' : 'WHERE $where'}
+      ORDER BY distance_score ASC
+      LIMIT ?
+    ''', args);
+  }
+
+  static String _distanceExpr() {
+    return '((lat - ?) * (lat - ?) + (lon - ?) * (lon - ?) * ?)';
+  }
+
+  static List<Object?> _distanceArgs(double lat, double lon) {
+    final cosLat = math.cos(lat * math.pi / 180);
+    return [lat, lat, lon, lon, cosLat * cosLat];
+  }
+}
+
+class NearestSheltersResult {
+  const NearestSheltersResult({
+    required this.shelters,
+    required this.usedDisasterTypeFallback,
+  });
+
+  final List<GsiShelter> shelters;
+  final bool usedDisasterTypeFallback;
 }

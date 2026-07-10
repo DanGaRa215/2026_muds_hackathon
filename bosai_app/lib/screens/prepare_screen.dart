@@ -3,7 +3,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../db/database_helper.dart';
 import '../models/shelter.dart';
+import '../routing/precompute_service.dart';
 import '../routing_bootstrap.dart';
+import '../services/home_area_service.dart';
 import 'home_register_screen.dart';
 
 /// 避難準備画面（設計書 §3【平常時】[避難準備]）
@@ -16,8 +18,6 @@ class PrepareScreen extends StatefulWidget {
 }
 
 class _PrepareScreenState extends State<PrepareScreen> {
-  static const _homeLocationSeparator = '||home=';
-
   String _structure = '木造';
   int _floor = 1;
   bool _saved = false;
@@ -31,11 +31,16 @@ class _PrepareScreenState extends State<PrepareScreen> {
 
   Future<void> _loadSaved() async {
     final info = await DatabaseHelper.instance.getHomeInfo();
+    final registeredHome = await DatabaseHelper.instance.getRegisteredHome();
     if (info != null && mounted) {
-      final rawStructure = info['structure'] as String;
       setState(() {
-        _structure = _parseStructure(rawStructure);
-        _homeLocation = _parseHomeLocation(rawStructure);
+        _structure = info['structure'] as String;
+        _homeLocation = registeredHome == null
+            ? null
+            : LatLng(
+                (registeredHome['lat'] as num).toDouble(),
+                (registeredHome['lon'] as num).toDouble(),
+              );
         _floor = info['floor'] as int;
         _saved = true;
       });
@@ -43,12 +48,12 @@ class _PrepareScreenState extends State<PrepareScreen> {
   }
 
   Future<void> _save() async {
-    await _saveHomeInfo(showSnackBar: true);
+    await _saveHomeProfile(showSnackBar: true);
   }
 
-  Future<void> _saveHomeInfo({required bool showSnackBar}) async {
-    await DatabaseHelper.instance.saveHomeInfo(
-      structure: _encodeStructure(_structure, _homeLocation),
+  Future<void> _saveHomeProfile({required bool showSnackBar}) async {
+    await DatabaseHelper.instance.saveHomeProfile(
+      structure: _structure,
       floor: _floor,
     );
     if (mounted) {
@@ -60,45 +65,6 @@ class _PrepareScreenState extends State<PrepareScreen> {
     }
   }
 
-  String _encodeStructure(String structure, LatLng? homeLocation) {
-    if (homeLocation == null) {
-      return structure;
-    }
-    return '$structure$_homeLocationSeparator'
-        '${homeLocation.latitude.toStringAsFixed(7)},'
-        '${homeLocation.longitude.toStringAsFixed(7)}';
-  }
-
-  String _parseStructure(String rawStructure) {
-    final separatorIndex = rawStructure.indexOf(_homeLocationSeparator);
-    if (separatorIndex < 0) {
-      return rawStructure;
-    }
-    final structure = rawStructure.substring(0, separatorIndex);
-    return structure.isEmpty ? '木造' : structure;
-  }
-
-  LatLng? _parseHomeLocation(String rawStructure) {
-    final separatorIndex = rawStructure.indexOf(_homeLocationSeparator);
-    if (separatorIndex < 0) {
-      return null;
-    }
-
-    final values =
-        rawStructure.substring(separatorIndex + _homeLocationSeparator.length);
-    final parts = values.split(',');
-    if (parts.length != 2) {
-      return null;
-    }
-
-    final lat = double.tryParse(parts[0]);
-    final lon = double.tryParse(parts[1]);
-    if (lat == null || lon == null) {
-      return null;
-    }
-    return LatLng(lat, lon);
-  }
-
   Future<void> _openHomeRegisterScreen() async {
     final selectedHome = await Navigator.of(context).push<LatLng>(
       MaterialPageRoute(builder: (_) => const HomeRegisterScreen()),
@@ -108,18 +74,39 @@ class _PrepareScreenState extends State<PrepareScreen> {
     }
 
     setState(() => _homeLocation = selectedHome);
-    await _saveHomeInfo(showSnackBar: false);
+    await DatabaseHelper.instance.saveHomeProfile(
+      structure: _structure,
+      floor: _floor,
+    );
+    await DatabaseHelper.instance.saveHomeLocation(
+      lat: selectedHome.latitude,
+      lon: selectedHome.longitude,
+    );
     if (!mounted) return;
 
     await _runPrecomputeWithRetry(selectedHome);
   }
 
   Future<void> _runPrecomputeWithRetry(LatLng homeLocation) async {
+    final routeService = await RoutingBootstrap.routeService();
+    if (!routeService.isInRoutingArea(homeLocation)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('経路データ未整備エリアです。避難所提案と地図表示は利用できます。'),
+        ),
+      );
+      return;
+    }
+
     var shouldRetry = true;
     while (shouldRetry && mounted) {
       shouldRetry = false;
       try {
-        await _precomputeWithProgress(homeLocation);
+        await _precomputeWithProgress(
+          homeLocation,
+          PrecomputeService(routeService),
+        );
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -133,7 +120,10 @@ class _PrepareScreenState extends State<PrepareScreen> {
     }
   }
 
-  Future<void> _precomputeWithProgress(LatLng homeLocation) async {
+  Future<void> _precomputeWithProgress(
+    LatLng homeLocation,
+    PrecomputeService precomputeService,
+  ) async {
     var progress = 0.0;
     StateSetter? updateDialog;
     final dialogFuture = showDialog<void>(
@@ -159,9 +149,11 @@ class _PrepareScreenState extends State<PrepareScreen> {
     );
 
     try {
-      final precomputeService = await RoutingBootstrap.precomputeService();
-      await precomputeService.precomputeAll(
+      final routeService = await RoutingBootstrap.routeService();
+      await HomeAreaService.precomputeIfRoutingAvailable(
         home: homeLocation,
+        routeService: routeService,
+        precomputeService: precomputeService,
         onProgress: (value) {
           progress = value.clamp(0.0, 1.0);
           updateDialog?.call(() {});
@@ -215,7 +207,8 @@ class _PrepareScreenState extends State<PrepareScreen> {
                   const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _structure,
+            key: ValueKey('structure-$_structure'),
+            initialValue: _structure,
             decoration: const InputDecoration(labelText: '建物構造'),
             items: ['木造', '鉄骨造', 'RC造（鉄筋コンクリート）']
                 .map((v) => DropdownMenuItem(value: v, child: Text(v)))
@@ -224,7 +217,8 @@ class _PrepareScreenState extends State<PrepareScreen> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<int>(
-            value: _floor,
+            key: ValueKey('floor-$_floor'),
+            initialValue: _floor,
             decoration: const InputDecoration(labelText: '居住階数'),
             items: List.generate(15, (i) => i + 1)
                 .map((v) => DropdownMenuItem(value: v, child: Text('$v階')))

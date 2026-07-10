@@ -63,7 +63,7 @@ CREATE TABLE shelters (
   elevation_m REAL NOT NULL,
   coast_distance_m REAL NOT NULL,  -- 最寄り水域までの距離(m)。列名は既存Dartモデル都合
   types TEXT NOT NULL,             -- 対応災害種別CSV。語彙は §6.3
-  capacity INTEGER NOT NULL,       -- 不明なら 0
+  capacity INTEGER NOT NULL,       -- 不明なら -1
   nearest_node INTEGER NOT NULL REFERENCES nodes(id)
 );
 
@@ -77,7 +77,13 @@ CREATE TABLE meta (                -- 生成情報(デバッグ用)
 STATIONS = {
     "西葛西駅": (35.6647, 139.8586),
     "船堀駅": (35.6837, 139.8646),
+    "三軒茶屋駅": (35.6436, 139.6713),
+    "新宿駅": (35.6909, 139.7003),
 }
+ROUTE_CHECKS = [
+    ("西葛西駅", "船堀駅", 1_500.0, 6_000.0),
+    ("三軒茶屋駅", "新宿駅", 4_000.0, 10_000.0),
+]
 ROUTING_SHELTER_TYPES = {"earthquake", "fire", "flood", "surge"}
 
 
@@ -161,9 +167,9 @@ def verify() -> bool:
     node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
     edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
     add(1, "nodes/edges 件数",
-        8_000 <= node_count <= 80_000 and 10_000 <= edge_count <= 120_000,
+        150_000 <= node_count <= 800_000 and 200_000 <= edge_count <= 1_200_000,
         f"nodes={node_count:,}, edges={edge_count:,}",
-        "nodes 8,000〜80,000 / edges 10,000〜120,000")
+        "nodes 150,000〜800,000 / edges 200,000〜1,200,000")
 
     # 2. 単一連結成分
     edge_rows = conn.execute("SELECT from_node, to_node, length_m FROM edges").fetchall()
@@ -182,27 +188,27 @@ def verify() -> bool:
     water_null = conn.execute("SELECT COUNT(*) FROM edges WHERE water_dist_m IS NULL").fetchone()[0]
     water_near = conn.execute("SELECT COUNT(*) FROM edges WHERE water_dist_m < 300").fetchone()[0]
     near_ratio = water_near / edge_count if edge_count else 0.0
-    add(3, "water_dist_m NULL=0 かつ <300m 比率≥15%",
-        water_null == 0 and near_ratio >= 0.15,
+    add(3, "water_dist_m NULL=0 かつ <300m 比率≥5%",
+        water_null == 0 and near_ratio >= 0.05,
         f"NULL={water_null}, <300m: {water_near:,}/{edge_count:,} = {near_ratio:.1%}",
-        "NULL=0 / 比率≥15%")
+        "NULL=0 / 比率≥5%")
 
     # 4. elevation_m (「概ね収まる」は 95% 以上が範囲内、と定義して判定)
     elev_null = conn.execute("SELECT COUNT(*) FROM edges WHERE elevation_m IS NULL").fetchone()[0]
     elev_min, elev_max = conn.execute("SELECT MIN(elevation_m), MAX(elevation_m) FROM edges").fetchone()
     in_range = conn.execute(
-        "SELECT COUNT(*) FROM edges WHERE elevation_m BETWEEN -5.0 AND 15.0"
+        "SELECT COUNT(*) FROM edges WHERE elevation_m BETWEEN -5.0 AND 70.0"
     ).fetchone()[0]
     in_ratio = in_range / edge_count if edge_count else 0.0
-    add(4, "elevation_m NULL=0 かつ値域 -5〜+15m に概ね収まる",
+    add(4, "elevation_m NULL=0 かつ値域 -5〜+70m に概ね収まる",
         elev_null == 0 and in_ratio >= 0.95,
         f"NULL={elev_null}, min={elev_min:.2f}m, max={elev_max:.2f}m, 範囲内={in_ratio:.1%}",
-        "NULL=0 / -5.0〜+15.0m 内が95%以上")
+        "NULL=0 / -5.0〜+70.0m 内が95%以上")
 
     # 5. 橋エッジ数
     bridge_count = conn.execute("SELECT COUNT(*) FROM edges WHERE is_bridge = 1").fetchone()[0]
-    add(5, "is_bridge=1 が50本以上", bridge_count >= 50,
-        f"is_bridge=1: {bridge_count:,}本", "≥50本")
+    add(5, "is_bridge=1 が500本以上", bridge_count >= 500,
+        f"is_bridge=1: {bridge_count:,}本", "≥500本")
 
     # 6. shelters
     shelter_count = conn.execute("SELECT COUNT(*) FROM shelters").fetchone()[0]
@@ -210,13 +216,14 @@ def verify() -> bool:
         "SELECT COUNT(*) FROM shelters s LEFT JOIN nodes n ON s.nearest_node = n.id"
         " WHERE n.id IS NULL"
     ).fetchone()[0]
-    add(6, "shelters ≥10件 かつ nearest_node 実在",
-        shelter_count >= 10 and orphan == 0,
+    add(6, "shelters ≥2,000件 かつ nearest_node 実在",
+        shelter_count >= 2_000 and orphan == 0,
         f"shelters={shelter_count}, nearest_node不整合={orphan}",
-        "≥10件 / JOIN不整合=0")
+        "≥2,000件 / JOIN不整合=0")
 
     type_rows = [row[0] for row in conn.execute("SELECT types FROM shelters")]
     empty_types = sum(1 for value in type_rows if not str(value).strip())
+    typed_count = len(type_rows) - empty_types
     invalid_tokens = sorted({
         token
         for value in type_rows
@@ -232,12 +239,12 @@ def verify() -> bool:
     ).fetchall()
     distribution_text = ", ".join(f"{types or '(empty)'}:{count}" for types, count in distribution)
     add(7, "shelters.types がrouting語彙と整合",
-        empty_types == 0 and not invalid_tokens,
+        typed_count > 0 and not invalid_tokens and flood_surge > 0,
         f"empty={empty_types}, invalid={invalid_tokens or 'なし'}, "
         f"flood/surge={flood_surge}, distribution={distribution_text}",
-        "empty=0 / 語彙は earthquake,fire,flood,surge のみ。flood/surge=0は該当なし")
+        "語彙は earthquake,fire,flood,surge のみ / 種別付き・flood/surge が1件以上")
 
-    # 8. 検証探索 (西葛西駅〜船堀駅)
+    # 8. 検証探索 (東西2系統)
     node_rows = conn.execute("SELECT id, lat, lon FROM nodes").fetchall()
     xs, ys = TO_PLANE.transform([r[2] for r in node_rows], [r[1] for r in node_rows])
     tree = STRtree([Point(x, y) for x, y in zip(xs, ys)])
@@ -246,21 +253,31 @@ def verify() -> bool:
         sx, sy = TO_PLANE.transform(lon, lat)
         idx, _dist = tree.query_nearest(Point(sx, sy), return_distance=True, all_matches=False)
         station_nodes[name] = node_rows[int(idx[0])][0]
-    try:
-        path_len = nx.shortest_path_length(
-            graph, station_nodes["西葛西駅"], station_nodes["船堀駅"], weight="length_m"
-        )
-        path_ok = 1_500.0 <= path_len <= 6_000.0
-        measured = f"経路長={path_len:,.0f}m (nodes {station_nodes['西葛西駅']}→{station_nodes['船堀駅']})"
-    except nx.NetworkXNoPath:
-        path_ok, measured = False, "経路なし"
-    add(8, "西葛西駅〜船堀駅の最短経路 1.5〜6.0km", path_ok, measured, "1,500〜6,000m")
+
+    route_measures = []
+    route_ok = True
+    for start_name, goal_name, min_m, max_m in ROUTE_CHECKS:
+        try:
+            path_len = nx.shortest_path_length(
+                graph, station_nodes[start_name], station_nodes[goal_name], weight="length_m"
+            )
+            ok = min_m <= path_len <= max_m
+            route_ok = route_ok and ok
+            route_measures.append(
+                f"{start_name}〜{goal_name}: {path_len:,.0f}m "
+                f"(nodes {station_nodes[start_name]}→{station_nodes[goal_name]})"
+            )
+        except nx.NetworkXNoPath:
+            route_ok = False
+            route_measures.append(f"{start_name}〜{goal_name}: 経路なし")
+    add(8, "東西2系統の最短経路が妥当",
+        route_ok, " / ".join(route_measures), "西葛西〜船堀 1,500〜6,000m / 三軒茶屋〜新宿 4,000〜10,000m")
 
     # 9. ファイルサイズ
     size_bytes = DB_PATH.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    add(9, "routing.db ≤80MB", size_bytes <= 80 * 1024 * 1024,
-        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤80MB")
+    add(9, "routing.db ≤200MB", size_bytes <= 200 * 1024 * 1024,
+        f"{size_mb:.1f}MB ({size_bytes:,} bytes)", "≤200MB")
 
     conn.close()
 
