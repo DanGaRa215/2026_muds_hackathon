@@ -8,31 +8,35 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-import '../db/demo_database_helper.dart';
+import '../db/database_helper.dart';
+import '../services/home_area_service.dart';
+import '../routing_bootstrap.dart';
 import 'demo_map_screen.dart';
 
 /// 🛠️ ハッカソン審査・デモ専用の自宅住所・マップ登録画面
 class DemoAddressGeocodingScreen extends StatefulWidget {
-  const DemoAddressGeocodingScreen({Key? key}) : super(key: key);
+  const DemoAddressGeocodingScreen({super.key});
 
   @override
-  State<DemoAddressGeocodingScreen> createState() => _DemoAddressGeocodingScreenState();
+  State<DemoAddressGeocodingScreen> createState() =>
+      _DemoAddressGeocodingScreenState();
 }
 
-class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen> {
-  final TextEditingController _zipController = TextEditingController(); 
-  final TextEditingController _addressController = TextEditingController(); 
+class _DemoAddressGeocodingScreenState
+    extends State<DemoAddressGeocodingScreen> {
+  final TextEditingController _zipController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
   final custom_geo.Geocoding _geocoding = custom_geo.Geocoding();
   final MapController _mapController = MapController();
-  
+
   bool _isLoading = false;
   String _statusText = "【デモ画面】郵便番号を入力して、住所を検索してください";
-  
-  LatLng _previewCenter = const LatLng(35.7069, 139.8687); 
+
+  LatLng _previewCenter = const LatLng(35.7069, 139.8687);
   bool _hasSearched = false;
 
   Future<void> _searchAddressByZip() async {
-    final zipCode = _zipController.text.trim().replaceAll('-', ''); 
+    final zipCode = _zipController.text.trim().replaceAll('-', '');
     if (zipCode.isEmpty || zipCode.length != 7) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("正しい郵便番号（7桁）を入力してください")),
@@ -46,17 +50,19 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
     });
 
     try {
-      final url = Uri.parse('https://zipcloud.ibsnet.co.jp/api/search?zipcode=$zipCode');
+      final url = Uri.parse(
+          'https://zipcloud.ibsnet.co.jp/api/search?zipcode=$zipCode');
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['results'] != null && data['results'].isNotEmpty) {
           final result = data['results'][0];
-          final fullAddress = "${result['address1']}${result['address2']}${result['address3']}";
-          
+          final fullAddress =
+              "${result['address1']}${result['address2']}${result['address3']}";
+
           _addressController.text = fullAddress;
-          
+
           setState(() {
             _statusText = "📍 住所を検出しました！続けて地図へ反映します...";
           });
@@ -77,7 +83,8 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
 
   Future<void> _updateMapPreview(String address) async {
     try {
-      List<custom_geo.Location> locations = await _geocoding.locationFromAddress(address);
+      List<custom_geo.Location> locations =
+          await _geocoding.locationFromAddress(address);
 
       if (locations.isEmpty) {
         setState(() => _statusText = "住所の位置（座標）が特定できませんでした。");
@@ -99,12 +106,8 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
     }
   }
 
-  String _getCityKey(String address) {
-    final tokyo23Wards = ["江戸川", "葛飾", "江東", "墨田", "足立", "荒川", "港区", "新宿", "品川", "目黒", "大田", "世田谷", "渋谷", "中野", "杉並", "練馬", "台東", "文京", "千代田", "中央区", "豊島", "北区", "板橋"];
-    for (var ward in tokyo23Wards) {
-      if (address.contains(ward)) return "demo_area"; 
-    }
-    return "demo_area"; 
+  String? _getCityKey(String address) {
+    return HomeAreaService.matchedTokyo23Ward(address);
   }
 
   Future<void> _downloadOfflineMap() async {
@@ -123,44 +126,38 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
 
     try {
       final cityKey = _getCityKey(address);
-      String savedPmtilesPath = '';
-
-      if (cityKey == "demo_area") {
-        setState(() => _statusText = "23区内のデータを検知しました。内蔵オフラインマップ（tokyo23_buffered）を同期中...");
-        final localPath = await _copyAssetToLocal('tokyo23_buffered.pmtiles');
-        savedPmtilesPath = localPath;
-      } else {
-        setState(() => _statusText = "周辺のオフラインマップデータをダウンロード中...\n(サーバーから $cityKey.pmtiles を取得しています)");
-
-        final directory = await getApplicationDocumentsDirectory();
-        final localPath = '${directory.path}/$cityKey.pmtiles';
-        final file = File(localPath);
-
-        if (!await file.exists()) {
-          final serverUrl = 'https://your-team-pages.github.io/maps/$cityKey.pmtiles';
-          final response = await http.get(Uri.parse(serverUrl));
-
-          if (response.statusCode == 200) {
-            await file.writeAsBytes(response.bodyBytes);
-          } else {
-            throw Exception("地図サーバーからのダウンロードに失敗しました (Status: ${response.statusCode})");
-          }
+      if (cityKey == null ||
+          !HomeAreaService.isInTokyo23ApproxArea(_previewCenter)) {
+        setState(() => _statusText = "東京23区の対象外です。登録は保存されません。");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("東京23区の対象外です")),
+          );
         }
-        savedPmtilesPath = localPath;
+        return;
       }
 
-      // 🎯 最新のDemoDatabaseHelperに情報を格納
-      await DemoDatabaseHelper.instance.saveHomeMapInfo(
+      setState(() =>
+          _statusText = "23区内のデータを検知しました。内蔵オフラインマップ（tokyo23_buffered）を同期中...");
+      final savedPmtilesPath = await _copyAssetToLocal(
+        HomeAreaService.tokyo23PmtilesAsset,
+      );
+      if (!mounted) return;
+
+      await DatabaseHelper.instance.saveHomeLocation(
         address: address,
         lat: _previewCenter.latitude,
         lon: _previewCenter.longitude,
         pmtilesPath: savedPmtilesPath,
-        structure: '木造',
-        floor: 1,
       );
+      if (!mounted) return;
+
+      final precomputeMessage =
+          await _precomputeAfterRegistration(_previewCenter);
+      if (!mounted) return;
 
       setState(() {
-        _statusText = "🎉 [$cityKey.pmtiles] のダウンロード＆【デモDB】自宅登録に成功しました！";
+        _statusText = "🎉 [$cityKey] のダウンロード＆自宅登録に成功しました！\n$precomputeMessage";
       });
 
       if (!mounted) return;
@@ -169,14 +166,16 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
         barrierDismissible: false,
         builder: (_) => AlertDialog(
           title: const Text('【デモ】同期・ダウンロード完了'),
-          content: const Text('対象エリア of 地図ファイルを検証用領域に保存しました。\n\n「OK」を押すと、デモ用マップ表示画面へ移動します。'),
+          content: const Text(
+              '対象エリア of 地図ファイルを検証用領域に保存しました。\n\n「OK」を押すと、デモ用マップ表示画面へ移動します。'),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const DemoMapScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const DemoMapScreen()),
                 );
               },
               child: const Text('OK (マップを確認)'),
@@ -184,16 +183,30 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
           ],
         ),
       );
-
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _statusText = "エラーが発生しました。\n詳細: $e";
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  Future<String> _precomputeAfterRegistration(LatLng home) async {
+    final routeService = await RoutingBootstrap.routeService();
+    final result = await HomeAreaService.precomputeIfRoutingAvailable(
+      home: home,
+      routeService: routeService,
+      precomputeService: await RoutingBootstrap.precomputeService(),
+    );
+    return result.didRun
+        ? '避難ルートを保存しました(オフラインで利用できます)。'
+        : '経路データ未整備エリアのため、避難所提案と地図表示のみ利用できます。';
   }
 
   Future<String> _copyAssetToLocal(String assetName) async {
@@ -240,10 +253,12 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
                     decoration: InputDecoration(
                       fillColor: Colors.white,
                       filled: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       labelText: '郵便番号 (ハイフンなし)',
                       hintText: '1340001(7桁)',
-                      prefixIcon: const Icon(Icons.local_post_office, color: mainColor),
+                      prefixIcon:
+                          const Icon(Icons.local_post_office, color: mainColor),
                     ),
                   ),
                 ),
@@ -256,23 +271,25 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
                       style: ElevatedButton.styleFrom(
                         backgroundColor: mainColor,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: _isLoading ? null : _searchAddressByZip,
-                      child: const Text('住所検索', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: const Text('住所検索',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            
             TextField(
               controller: _addressController,
               decoration: InputDecoration(
                 fillColor: Colors.white,
                 filled: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 labelText: '取得された住所 (番地などは追記してください)',
                 prefixIcon: const Icon(Icons.home, color: mainColor),
               ),
@@ -281,21 +298,22 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
               },
             ),
             const SizedBox(height: 16),
-
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 _statusText,
-                style: const TextStyle(fontSize: 13, color: mainColor, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                    fontSize: 13,
+                    color: mainColor,
+                    fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 16),
-
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
@@ -309,7 +327,8 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'package:bosai_app',
                     ),
                     if (_hasSearched)
@@ -319,7 +338,8 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
                             point: _previewCenter,
                             width: 40,
                             height: 40,
-                            child: const Icon(Icons.location_on, color: Colors.red, size: 45),
+                            child: const Icon(Icons.location_on,
+                                color: Colors.red, size: 45),
                           ),
                         ],
                       ),
@@ -328,18 +348,22 @@ class _DemoAddressGeocodingScreenState extends State<DemoAddressGeocodingScreen>
               ),
             ),
             const SizedBox(height: 16),
-
             SizedBox(
               height: 55,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _hasSearched ? Colors.green[700] : Colors.grey,
+                  backgroundColor:
+                      _hasSearched ? Colors.green[700] : Colors.grey,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
-                onPressed: (_isLoading || !_hasSearched) ? null : _downloadOfflineMap,
+                onPressed:
+                    (_isLoading || !_hasSearched) ? null : _downloadOfflineMap,
                 icon: const Icon(Icons.verified_user, size: 24),
-                label: const Text('デモ用DB領域に地図を保存する', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                label: const Text('デモ用DB領域に地図を保存する',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ),
           ],

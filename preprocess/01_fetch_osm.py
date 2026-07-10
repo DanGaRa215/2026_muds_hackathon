@@ -1,6 +1,6 @@
 """01: OSM道路網・水域の取得 → 中間ファイル (仕様書§6.1, §6.2の取得部分)
 
-- 対象範囲: 江戸川区行政界 + 1.5km バッファ (§3)。行政界が取れない場合は bbox。
+- 対象範囲: 東京23区行政界 + 1.5km バッファ (§3)。行政界が取れない場合は bbox。
 - 道路網: network_type="walk"。walkフィルタに加えて
   highway in (motorway, motorway_link, trunk, trunk_link) / access=private / foot=no
   を明示的に除外し、simplify を適用して GraphML に保存。
@@ -26,6 +26,7 @@ from pipeline_common import (
     GRAPH_GRAPHML,
     INTERIM_DIR,
     OVERPASS_URL,
+    TOKYO23_WARDS,
     WATER_GEOJSON,
     setup_logging,
     write_json,
@@ -62,17 +63,27 @@ def _retry(func, what: str, attempts: int = 3, wait_s: float = 15.0):
 
 
 def _get_boundary() -> tuple[gpd.GeoDataFrame, str]:
-    """江戸川区の行政界。取得失敗時は§3のbboxにフォールバック。"""
+    """東京23区の行政界union。取得失敗時は§3のbboxにフォールバック。"""
     try:
+        queries = [f"{ward}, 東京都, 日本" for ward in TOKYO23_WARDS]
         gdf = _retry(
-            lambda: ox.geocode_to_gdf("江戸川区, 東京都, 日本"),
+            lambda: ox.geocode_to_gdf(queries),
             "行政界ジオコーディング",
         )
-        geom = gdf.geometry.iloc[0]
+        gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])]
+        if len(gdf) == len(TOKYO23_WARDS):
+            geom = gdf.geometry.union_all()
+            logger.info("東京23区行政界ポリゴンを取得 (Nominatim)")
+            return gpd.GeoDataFrame(geometry=[geom], crs=gdf.crs)[["geometry"]], (
+                "nominatim(東京23区行政界union)"
+            )
+        geom = gdf.geometry.union_all() if len(gdf) else None
         if geom.geom_type in ("Polygon", "MultiPolygon"):
-            logger.info("行政界ポリゴンを取得 (Nominatim)")
-            return gdf[["geometry"]], "nominatim(江戸川区, 東京都, 日本)"
-        logger.warning("ジオコーディング結果がポリゴンでない (%s)", geom.geom_type)
+            logger.warning("行政界取得が一部欠落 (%d/%d)。取得分のunionを使用", len(gdf), len(TOKYO23_WARDS))
+            return gpd.GeoDataFrame(geometry=[geom], crs=gdf.crs)[["geometry"]], (
+                f"nominatim(東京23区行政界partial {len(gdf)}/{len(TOKYO23_WARDS)})"
+            )
+        logger.warning("ジオコーディング結果がポリゴンでない")
     except Exception as e:
         logger.warning("行政界の取得に失敗: %s", e)
     logger.warning("フォールバック bbox を使用: %s", FALLBACK_BBOX)
@@ -141,7 +152,7 @@ def _fetch_water(polygon) -> gpd.GeoDataFrame:
     gdf = gdf.reset_index(drop=True)
     if len(gdf) == 0:
         # §6.2 水域ゼロはデータ取得失敗を意味するため停止
-        raise RuntimeError("水域ジオメトリが0件。江戸川区で水域ゼロはあり得ないため停止")
+        raise RuntimeError("水域ジオメトリが0件。東京23区で水域ゼロはあり得ないため停止")
     logger.info("水域: %d ジオメトリ", len(gdf))
     return gdf
 

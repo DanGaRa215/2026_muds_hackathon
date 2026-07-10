@@ -1,9 +1,9 @@
 """04: 避難所の取り込みとスナップ (仕様書§6.3)
 
 - 入力: 既定では bosai_app/assets/shelters.db のGSIスナップショットから
-  江戸川区(13123)を抽出する
+  東京23区(13101〜13123)を抽出する
 - shelters.db が無い環境では、国土地理院「指定緊急避難場所データ」の
-  江戸川区分CSV (data/raw/shelters_edogawa.csv) にフォールバックする
+  東京23区分CSV (data/raw/shelters_tokyo23.csv) にフォールバックする
 - routing.db の types 語彙: earthquake, fire, flood, surge
 - elevation_m: §6.4 と同じ方法 / coast_distance_m: §6.2 と同じ STRtree
 - nearest_node: ノードSTRtree で最近傍。200m超は警告ログ
@@ -29,6 +29,8 @@ from pipeline_common import (
     RAW_DIR,
     SHELTERS_PARQUET,
     TO_PLANE,
+    TOKYO23_CITY_CODES,
+    TOKYO23_WARDS,
     WATER_DIST_CLIP_M,
     setup_logging,
 )
@@ -40,8 +42,7 @@ build_graph = importlib.import_module("02_build_graph")
 
 # 国土地理院 指定緊急避難場所データ(全国版CSV)。README に手順を記載
 NATIONAL_CSV_URL = "https://hinanmap.gsi.go.jp/hinanjocp/defaultFtpData/csv/mergeFromCity_2.csv"
-MUNICIPALITY = "東京都江戸川区"
-MUNICIPALITY_CODE = "13123"
+TOKYO23_MUNICIPALITIES = [f"東京都{ward}" for ward in TOKYO23_WARDS]
 DEFAULT_GSI_DB = Path(__file__).resolve().parents[1] / "bosai_app" / "assets" / "shelters.db"
 
 COL_ID = "共通ID"
@@ -68,7 +69,7 @@ SNAP_WARN_DIST_M = 200.0
 
 
 def ensure_input_csv(input_path: Path) -> Path:
-    """入力CSVが無ければ全国版をDLして江戸川区分を抽出する"""
+    """入力CSVが無ければ全国版をDLして東京23区分を抽出する"""
     if input_path.exists():
         logger.info("入力CSVを使用: %s", input_path)
         return input_path
@@ -80,12 +81,12 @@ def ensure_input_csv(input_path: Path) -> Path:
         resp.raise_for_status()
         national_path.write_bytes(resp.content)
     national = pd.read_csv(national_path, encoding="utf-8-sig", dtype=str, keep_default_na=False)
-    edogawa = national[national[COL_MUNICIPALITY] == MUNICIPALITY]
-    if len(edogawa) == 0:
-        raise RuntimeError(f"全国版CSVに {MUNICIPALITY} の行が無い")
+    tokyo23 = national[national[COL_MUNICIPALITY].isin(TOKYO23_MUNICIPALITIES)]
+    if len(tokyo23) == 0:
+        raise RuntimeError("全国版CSVに東京23区の行が無い")
     input_path.parent.mkdir(parents=True, exist_ok=True)
-    edogawa.to_csv(input_path, index=False, encoding="utf-8-sig")
-    logger.info("江戸川区分 %d 行を抽出 → %s", len(edogawa), input_path)
+    tokyo23.to_csv(input_path, index=False, encoding="utf-8-sig")
+    logger.info("東京23区分 %d 行を抽出 → %s", len(tokyo23), input_path)
     return input_path
 
 
@@ -104,22 +105,23 @@ def _types_from_csv_row(row: dict) -> str:
 def load_shelter_rows(input_path: Path, gsi_db_path: Path) -> tuple[list[dict], str]:
     """GSIスナップショットDBがあれば正として使い、無ければ従来CSVを使う。"""
     if gsi_db_path.exists():
-        logger.info("GSI shelters.db から江戸川区を抽出: %s", gsi_db_path)
+        logger.info("GSI shelters.db から東京23区を抽出: %s", gsi_db_path)
         with sqlite3.connect(gsi_db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
                 SELECT
                   shelter_id, name, lat, lon,
-                  t_earthquake, t_fire, t_flood, t_storm_surge
+                  t_earthquake, t_fire, t_flood, t_storm_surge,
+                  COALESCE(capacity, -1) AS capacity
                 FROM shelters
-                WHERE city_code = ? OR city_name = '江戸川区'
-                ORDER BY name, shelter_id
-                """,
-                (MUNICIPALITY_CODE,),
+                WHERE city_code IN ({placeholders})
+                ORDER BY city_code, name, shelter_id
+                """.format(placeholders=",".join("?" for _ in TOKYO23_CITY_CODES)),
+                tuple(TOKYO23_CITY_CODES),
             ).fetchall()
         if not rows:
-            raise RuntimeError(f"GSI shelters.db に江戸川区({MUNICIPALITY_CODE})の行が無い")
+            raise RuntimeError("GSI shelters.db に東京23区(13101〜13123)の行が無い")
         records = []
         for row in rows:
             record = dict(row)
@@ -135,12 +137,12 @@ def load_shelter_rows(input_path: Path, gsi_db_path: Path) -> tuple[list[dict], 
     if missing_cols:
         raise RuntimeError(f"入力CSVに必要な列が無い: {missing_cols}")
 
-    df = df[df[COL_MUNICIPALITY] == MUNICIPALITY].copy()
+    df = df[df[COL_MUNICIPALITY].isin(TOKYO23_MUNICIPALITIES)].copy()
     records = []
     for seq, row in enumerate(df.to_dict("records"), start=1):
         shelter_id = str(row[COL_ID]).strip()
         if not shelter_id:
-            shelter_id = f"edogawa-{seq:04d}"  # 元データにIDが無い場合の採番 (§2)
+            shelter_id = f"tokyo23-{seq:04d}"  # 元データにIDが無い場合の採番 (§2)
         records.append(
             {
                 "shelter_id": shelter_id,
@@ -148,6 +150,7 @@ def load_shelter_rows(input_path: Path, gsi_db_path: Path) -> tuple[list[dict], 
                 "lat": float(row[COL_LAT]),
                 "lon": float(row[COL_LON]),
                 "types": _types_from_csv_row(row),
+                "capacity": -1,
             }
         )
     return records, "csv"
@@ -155,7 +158,7 @@ def load_shelter_rows(input_path: Path, gsi_db_path: Path) -> tuple[list[dict], 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, default=RAW_DIR / "shelters_edogawa.csv")
+    parser.add_argument("--input", type=Path, default=RAW_DIR / "shelters_tokyo23.csv")
     parser.add_argument("--gsi-db", type=Path, default=DEFAULT_GSI_DB)
     args = parser.parse_args()
 
@@ -171,6 +174,7 @@ def main() -> int:
 
     records = []
     seen_ids = set()
+    empty_type_count = 0
     for row in source_rows:
         shelter_id = str(row["shelter_id"]).strip()
         if shelter_id in seen_ids:
@@ -181,7 +185,7 @@ def main() -> int:
         lat, lon = float(row["lat"]), float(row["lon"])
         types = str(row["types"])
         if not types:
-            logger.warning("対応災害種別が空: %s (%s)", shelter_id, row["name"])
+            empty_type_count += 1
 
         elevation = get_elevation(lat, lon)
         if elevation is None:
@@ -211,7 +215,7 @@ def main() -> int:
                 "elevation_m": float(elevation),
                 "coast_distance_m": coast_dist,
                 "types": types,
-                "capacity": 0,  # 元データに収容人数が無いため 0 (§6.3)
+                "capacity": int(row.get("capacity") or -1),
                 "nearest_node": nearest_node,
             }
         )
@@ -219,6 +223,11 @@ def main() -> int:
     shelters = pd.DataFrame(records)
     if len(shelters) == 0:
         raise RuntimeError("避難所が0件")
+    if empty_type_count:
+        logger.warning(
+            "対応災害種別が空の避難所: %d件 (ラベル未整備として近傍候補には残す)",
+            empty_type_count,
+        )
     shelters.to_parquet(SHELTERS_PARQUET, index=False)
     logger.info("04 完了: shelters=%d", len(shelters))
     return 0

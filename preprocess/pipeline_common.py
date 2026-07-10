@@ -2,7 +2,7 @@
 
 - 仕様書§5: 距離計算は JGD2011 平面直角座標系 第IX系 (EPSG:6677) で行う。
   Transformer は本モジュールで1個だけ生成して全工程で使い回す。
-- 仕様書§3: 対象範囲(江戸川区行政界 + 1.5km バッファ、bbox フォールバック)
+- 仕様書§3: 対象範囲(東京23区行政界 + 1.5km バッファ、bbox フォールバック)
 """
 
 from __future__ import annotations
@@ -35,8 +35,35 @@ DB_PATH = OUTPUT_DIR / "routing.db"
 VERIFICATION_JSON = OUTPUT_DIR / "verification.json"
 
 # §3 行政界ポリゴンが取れない場合のフォールバック bbox
-FALLBACK_BBOX = {"lat_min": 35.56, "lon_min": 139.81, "lat_max": 35.78, "lon_max": 139.93}
+FALLBACK_BBOX = {"lat_min": 35.50, "lon_min": 139.55, "lat_max": 35.83, "lon_max": 139.93}
 BUFFER_M = 1500.0
+
+TOKYO23_WARDS = [
+    "千代田区",
+    "中央区",
+    "港区",
+    "新宿区",
+    "文京区",
+    "台東区",
+    "墨田区",
+    "江東区",
+    "品川区",
+    "目黒区",
+    "大田区",
+    "世田谷区",
+    "渋谷区",
+    "中野区",
+    "杉並区",
+    "豊島区",
+    "北区",
+    "荒川区",
+    "板橋区",
+    "練馬区",
+    "足立区",
+    "葛飾区",
+    "江戸川区",
+]
+TOKYO23_CITY_CODES = [f"131{i:02d}" for i in range(1, 24)]
 
 # §5 EPSG:4326 -> EPSG:6677 (JGD2011 平面直角座標系 第IX系)。1個生成して使い回す
 TO_PLANE = Transformer.from_crs("EPSG:4326", "EPSG:6677", always_xy=True)

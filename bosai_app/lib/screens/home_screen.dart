@@ -22,7 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Widget> _getPages() {
     return [
-      const _DailyDashboardPage(isDemoMode: false), 
+      const _DailyDashboardPage(isDemoMode: false),
       const _PlaceholderTabPage(
         title: '家具診断履歴',
         icon: Icons.history,
@@ -35,9 +35,11 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       // アプリ設定タブから HomeScreen の Context を利用してデモ画面へ遷移させる
       _AppSettingsTabPage(onNavigateToDemo: () {
-        _push(context, const Scaffold(
-          body: SafeArea(child: _DailyDashboardPage(isDemoMode: true)),
-        ));
+        _push(
+            context,
+            const Scaffold(
+              body: SafeArea(child: _DailyDashboardPage(isDemoMode: true)),
+            ));
       }),
     ];
   }
@@ -105,11 +107,12 @@ class _DailyDashboardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE7FBF0),
-      appBar: isDemoMode 
+      appBar: isDemoMode
           ? AppBar(
               backgroundColor: Colors.amber.shade700,
               foregroundColor: Colors.white,
-              title: const Text('ハッカソン審査：江戸川区デモ画面', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              title: const Text('東京23区デモ画面',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               centerTitle: true,
               elevation: 0,
             )
@@ -125,10 +128,12 @@ class _DailyDashboardPage extends StatelessWidget {
                 children: [
                   Text(
                     isDemoMode ? '日常の防災メニュー（デモ）' : '日常の防災メニュー',
-                    style: const TextStyle(color: _textColor, fontSize: 22, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        color: _textColor,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  
                   GridView.count(
                     crossAxisCount: 2,
                     shrinkWrap: true,
@@ -140,15 +145,16 @@ class _DailyDashboardPage extends StatelessWidget {
                       _DailyMenuCardButton(
                         icon: Icons.camera_alt,
                         label: 'AI家具安全診断',
-                        onTap: () => _push(context, const FurnitureDiagnosisUiScreen()),
+                        onTap: () =>
+                            _push(context, const FurnitureDiagnosisUiScreen()),
                       ),
                       _DailyMenuCardButton(
                         icon: Icons.map,
                         label: '避難準備（マップDL）',
                         onTap: () {
                           if (isDemoMode) {
-                            // デモモード時は新設した専用マップ画面へジャンプ（constなし）
-                            _push(context, DemoMapScreen());
+                            // デモモード時は新設した専用マップ画面へジャンプ
+                            _push(context, const DemoMapScreen());
                           } else {
                             _push(context, const MapSpikeScreen());
                           }
@@ -162,24 +168,29 @@ class _DailyDashboardPage extends StatelessWidget {
                       _DailyMenuCardButton(
                         icon: Icons.home_work,
                         label: '自宅の住所登録',
-                        onTap: () => _push(context, const AddressGeocodingScreen()),
+                        onTap: () =>
+                            _push(context, const AddressGeocodingScreen()),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
-
                   if (isDemoMode)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red.shade900,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
                       ),
                       icon: const Icon(Icons.warning_amber_rounded, size: 24),
-                      label: const Text('デモ実行：緊急地震速報（EEW）を発災', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      label: const Text('デモ実行：緊急地震速報（EEW）を発災',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15)),
                       onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const EewScreen()),
+                        MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) => const EewScreen()),
                       ),
                     ),
                 ],
@@ -208,18 +219,20 @@ class _AppSettingsTabPage extends StatelessWidget {
         children: [
           const Text(
             'アプリ設定',
-            style: TextStyle(color: _textColor, fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: _textColor, fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
-          
-          // 審査員専用のシンプルな起動用ListTileボタン
+
+          // 東京23区デモ起動用のシンプルなListTileボタン
           ListTile(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(color: Colors.grey.shade400, width: 1),
             ),
             leading: const Icon(Icons.developer_mode, color: _textColor),
-            title: const Text('ハッカソン審査用デモモードを起動', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text('東京23区デモモードを起動',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: onNavigateToDemo,
           ),
@@ -230,7 +243,8 @@ class _AppSettingsTabPage extends StatelessWidget {
 }
 
 class _DailyMenuCardButton extends StatelessWidget {
-  const _DailyMenuCardButton({required this.icon, required this.label, required this.onTap});
+  const _DailyMenuCardButton(
+      {required this.icon, required this.label, required this.onTap});
   static const Color _textColor = Color(0xFF300808);
   final IconData icon;
   final String label;
@@ -254,7 +268,12 @@ class _DailyMenuCardButton extends StatelessWidget {
         children: [
           Icon(icon, size: 44),
           const SizedBox(height: 14),
-          Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
+          Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: _textColor)),
         ],
       ),
     );
@@ -266,7 +285,8 @@ void _push(BuildContext context, Widget page) {
 }
 
 class _PlaceholderTabPage extends StatelessWidget {
-  const _PlaceholderTabPage({required this.title, required this.icon, required this.description});
+  const _PlaceholderTabPage(
+      {required this.title, required this.icon, required this.description});
   static const Color _textColor = Color(0xFF300808);
   final String title;
   final IconData icon;
@@ -282,9 +302,15 @@ class _PlaceholderTabPage extends StatelessWidget {
           children: [
             Icon(icon, size: 56, color: _textColor),
             const SizedBox(height: 16),
-            Text(title, style: const TextStyle(color: _textColor, fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(title,
+                style: const TextStyle(
+                    color: _textColor,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(description, textAlign: TextAlign.center, style: const TextStyle(color: _textColor, fontSize: 16)),
+            Text(description,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _textColor, fontSize: 16)),
           ],
         ),
       ),

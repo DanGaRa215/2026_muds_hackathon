@@ -8,6 +8,13 @@ class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
 
+  static const _defaultAddress = '未登録住所';
+  static const _defaultLat = 35.7434;
+  static const _defaultLon = 139.8472;
+  static const _defaultStructure = '木造';
+  static const _defaultFloor = 1;
+  static const _legacyHomeLocationSeparator = '||home=';
+
   static Database? _db;
 
   Future<Database> get database async {
@@ -51,20 +58,25 @@ class DatabaseHelper {
             lon REAL NOT NULL,
             pmtiles_path TEXT NOT NULL,
             structure TEXT NOT NULL,
-            floor INTEGER NOT NULL
+            floor INTEGER NOT NULL,
+            home_registered INTEGER NOT NULL DEFAULT 0
           )
         ''');
         await _seedShelters(db);
         await _createPrecomputedRoutes(db);
+        await _ensureHomeInfoColumns(db);
+        await _repairHomeInfo(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createPrecomputedRoutes(db);
         }
         await _ensureHomeInfoColumns(db);
+        await _repairHomeInfo(db);
       },
       onOpen: (db) async {
         await _ensureHomeInfoColumns(db);
+        await _repairHomeInfo(db);
       },
     );
   }
@@ -98,16 +110,79 @@ class DatabaseHelper {
     final columnNames = columns.map((row) => row['name'] as String).toSet();
 
     if (!columnNames.contains('address')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN address TEXT NOT NULL DEFAULT "未登録住所"');
+      await db.execute(
+        "ALTER TABLE home_info ADD COLUMN address TEXT NOT NULL DEFAULT '$_defaultAddress'",
+      );
     }
     if (!columnNames.contains('lat')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN lat REAL NOT NULL DEFAULT 35.7434');
+      await db.execute(
+        'ALTER TABLE home_info ADD COLUMN lat REAL NOT NULL DEFAULT $_defaultLat',
+      );
     }
     if (!columnNames.contains('lon')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN lon REAL NOT NULL DEFAULT 139.8472');
+      await db.execute(
+        'ALTER TABLE home_info ADD COLUMN lon REAL NOT NULL DEFAULT $_defaultLon',
+      );
     }
     if (!columnNames.contains('pmtiles_path')) {
-      await db.execute('ALTER TABLE home_info ADD COLUMN pmtiles_path TEXT NOT NULL DEFAULT ""');
+      await db.execute(
+        "ALTER TABLE home_info ADD COLUMN pmtiles_path TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (!columnNames.contains('home_registered')) {
+      await db.execute(
+        'ALTER TABLE home_info ADD COLUMN home_registered INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+  }
+
+  Future<void> _repairHomeInfo(Database db) async {
+    final rows = await db.query('home_info', where: 'id = 1', limit: 1);
+    if (rows.isEmpty) {
+      return;
+    }
+
+    final row = rows.first;
+    final updates = <String, Object?>{};
+    final rawStructure = row['structure'] as String? ?? _defaultStructure;
+    final separatorIndex = rawStructure.indexOf(_legacyHomeLocationSeparator);
+
+    if (separatorIndex >= 0) {
+      final cleanStructure = rawStructure.substring(0, separatorIndex);
+      updates['structure'] =
+          cleanStructure.isEmpty ? _defaultStructure : cleanStructure;
+
+      final values = rawStructure.substring(
+        separatorIndex + _legacyHomeLocationSeparator.length,
+      );
+      final parts = values.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0].trim());
+        final lon = double.tryParse(parts[1].trim());
+        if (lat != null && lon != null) {
+          updates['lat'] = lat;
+          updates['lon'] = lon;
+          updates['home_registered'] = 1;
+        }
+      }
+    }
+
+    final registered = (row['home_registered'] as num?)?.toInt() ?? 0;
+    final address = row['address'] as String? ?? _defaultAddress;
+    final lat = (updates['lat'] as double?) ??
+        (row['lat'] as num?)?.toDouble() ??
+        _defaultLat;
+    final lon = (updates['lon'] as double?) ??
+        (row['lon'] as num?)?.toDouble() ??
+        _defaultLon;
+    final hasLegacyLocation =
+        address != _defaultAddress || lat != _defaultLat || lon != _defaultLon;
+    if (registered == 0 && hasLegacyLocation) {
+      updates['home_registered'] = 1;
+    }
+
+    if (updates.isNotEmpty) {
+      await db.update('home_info', updates, where: 'id = 1');
     }
   }
 
@@ -118,9 +193,12 @@ class DatabaseHelper {
       Shelter(
         shelterId: 'demo-0001',
         name: '第一小学校（ダミー）',
-        lat: 35.750, lon: 139.848,
-        elevationM: 3, coastDistanceM: 9000,
-        types: 'earthquake,fire', capacity: 800,
+        lat: 35.750,
+        lon: 139.848,
+        elevationM: 3,
+        coastDistanceM: 9000,
+        types: 'earthquake,fire',
+        capacity: 800,
       ),
     ];
     final batch = db.batch();
@@ -141,6 +219,16 @@ class DatabaseHelper {
     return rows.isEmpty ? null : rows.first;
   }
 
+  Future<Map<String, dynamic>?> getRegisteredHome() async {
+    final db = await database;
+    final rows = await db.query(
+      'home_info',
+      where: 'id = 1 AND home_registered = 1',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
   /// 避難所一覧を取得する (getShelters)
   /// 💡 Mapのリストから Shelter クラスのリストへ自動変換するように修正
   Future<List<Shelter>> getShelters() async {
@@ -154,15 +242,11 @@ class DatabaseHelper {
   Future<int> insertDiagnosis(Diagnosis diagnosis) async {
     final db = await database;
     return await db.insert(
-      'diagnoses', 
-      diagnosis.toMap(), 
+      'diagnoses',
+      diagnosis.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
-
-  // =====================================================================
-  // 既存のメソッド
-  // =====================================================================
 
   Future<List<Diagnosis>> getDiagnoses() async {
     final db = await database;
@@ -170,52 +254,66 @@ class DatabaseHelper {
     return rows.map(Diagnosis.fromMap).toList();
   }
 
-  Future<void> saveHomeInfo({
-    required String structure,
-    required int floor,
-    String address = '未登録住所',
-    double lat = 35.7434,
-    double lon = 139.8472,
-    String pmtilesPath = '',
-  }) async {
-    final db = await database;
+  Future<void> _ensureHomeInfoRow(Database db) async {
     await db.insert(
       'home_info',
       {
         'id': 1,
-        'address': address,
-        'lat': lat,
-        'lon': lon,
-        'pmtiles_path': pmtilesPath,
+        'address': _defaultAddress,
+        'lat': _defaultLat,
+        'lon': _defaultLon,
+        'pmtiles_path': '',
+        'structure': _defaultStructure,
+        'floor': _defaultFloor,
+        'home_registered': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> saveHomeProfile({
+    required String structure,
+    required int floor,
+  }) async {
+    final db = await database;
+    await _ensureHomeInfoRow(db);
+    await db.update(
+      'home_info',
+      {
         'structure': structure,
         'floor': floor,
       },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      where: 'id = 1',
     );
   }
 
-  // 🎯 復活：自宅登録画面から位置情報とPMTilesパスを保存する用
-  Future<void> saveHomeMapInfo({
-    required String address,
+  Future<void> saveHomeLocation({
     required double lat,
     required double lon,
-    required String pmtilesPath,
-    String structure = '木造',
-    int floor = 1,
+    String? address,
+    String? pmtilesPath,
   }) async {
-    await saveHomeInfo(
-      structure: structure,
-      floor: floor,
-      address: address,
-      lat: lat,
-      lon: lon,
-      pmtilesPath: pmtilesPath,
-    );
+    final db = await database;
+    await _ensureHomeInfoRow(db);
+
+    final updates = <String, Object?>{
+      'lat': lat,
+      'lon': lon,
+      'home_registered': 1,
+    };
+    if (address != null) {
+      updates['address'] = address;
+    }
+    if (pmtilesPath != null) {
+      updates['pmtiles_path'] = pmtilesPath;
+    }
+
+    await db.update('home_info', updates, where: 'id = 1');
+    await clearPrecomputedRoutes();
   }
 
-  Future<Map<String, dynamic>?> getHomeMapInfo() async {
+  Future<void> clearPrecomputedRoutes() async {
     final db = await database;
-    final rows = await db.query('home_info', where: 'id = 1');
-    return rows.isEmpty ? null : rows.first;
+    await db.delete('precomputed_routes');
   }
 }

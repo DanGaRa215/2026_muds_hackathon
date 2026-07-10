@@ -183,6 +183,8 @@ class RouteService implements RouteSearchClient {
   @override
   bool isInRoutingArea(LatLng from) => _snapStart(from) != null;
 
+  List<ShelterInfo> get allShelters => List.unmodifiable(_rdb.shelters);
+
   /// 1対1のリアルタイム探索(直線距離ヒューリスティックのA*)。
   /// 出発地がグラフ範囲外(最近傍ノードまで300m超)または避難所不明・
   /// 到達不能のとき null。
@@ -199,15 +201,6 @@ class RouteService implements RouteSearchClient {
       return null;
     }
     final shelter = _rdb.shelters[shelterIndex];
-    final hasAnyTypes = _rdb.shelters.any((s) => s.typeList.isNotEmpty);
-    if (hasAnyTypes && !shelterSupportsMode(shelter, mode)) {
-      developer.log(
-        '避難所 ${shelter.shelterId} は $mode に対応していない',
-        name: 'routing',
-        level: 900,
-      );
-      return null;
-    }
     final goal = _rdb.shelterNodeIndexes[shelterIndex];
     if (goal < 0) return null;
 
@@ -259,6 +252,48 @@ class RouteService implements RouteSearchClient {
       developer.log('到達不能でスキップしたゴール: $skipped件 (mode=$mode)',
           name: 'routing', level: 900);
     }
+
+    final results = <RouteResult>[];
+    for (final entry in outcomes.entries) {
+      for (final shelter in sheltersByNode[entry.key]!) {
+        results.add(await _buildResult(shelter, mode, profile, entry.value));
+      }
+    }
+    return results;
+  }
+
+  /// 指定した避難所だけを対象に、1始点→複数ゴールをまとめて探索する。
+  /// カード候補の実経路順ソートで使うため、災害種別では絞り込まない。
+  Future<List<RouteResult>> findRoutesToShelters({
+    required LatLng from,
+    required Iterable<ShelterInfo> shelters,
+    required DisasterMode mode,
+    required WeightProfile profile,
+  }) async {
+    final graph = _rdb.graph;
+    final start = _snapStart(from);
+    if (start == null) {
+      developer.log('出発地がグラフ範囲外: $from', name: 'routing', level: 900);
+      return [];
+    }
+
+    final sheltersByNode = <int, List<ShelterInfo>>{};
+    final seenShelterIds = <String>{};
+    for (final shelter in shelters) {
+      if (!seenShelterIds.add(shelter.shelterId)) continue;
+      final index =
+          _rdb.shelters.indexWhere((s) => s.shelterId == shelter.shelterId);
+      if (index < 0) continue;
+      final node = _rdb.shelterNodeIndexes[index];
+      if (node < 0) continue;
+      sheltersByNode.putIfAbsent(node, () => []).add(_rdb.shelters[index]);
+    }
+
+    final goals = sheltersByNode.keys.toSet();
+    if (goals.isEmpty) return [];
+
+    final outcomes = await Isolate.run(
+        () => searchMultiGoal(graph, start, goals, mode, profile));
 
     final results = <RouteResult>[];
     for (final entry in outcomes.entries) {

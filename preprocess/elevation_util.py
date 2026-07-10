@@ -28,7 +28,7 @@ MISSING_TILE_MARKER = "__404__"
 logger = logging.getLogger(__name__)
 
 _session = requests.Session()
-_session.headers["User-Agent"] = "edogawa-offline-routing-preprocess/1.0"
+_session.headers["User-Agent"] = "tokyo23-offline-routing-preprocess/1.0"
 _tile_cache: dict[tuple[str, int, int, int], list[list[float | None]] | None] = {}
 _last_request_at = 0.0
 

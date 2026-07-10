@@ -1,6 +1,6 @@
 import 'package:latlong2/latlong.dart';
 
-/// 災害モード。江戸川区の実情(江東5区広域避難計画)を踏まえ、
+/// 災害モード。東京23区の低地・沿岸部を含む避難計画を踏まえ、
 /// 津波は独立モードとせず flood(洪水・高潮)に包含する。
 enum DisasterMode { earthquake, flood }
 

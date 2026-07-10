@@ -10,6 +10,7 @@ import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import '../routing_bootstrap.dart';
+import '../services/home_area_service.dart';
 
 class HomeRegisterScreen extends StatefulWidget {
   const HomeRegisterScreen({super.key});
@@ -109,15 +110,21 @@ class _HomeRegisterScreenState extends State<HomeRegisterScreen> {
 
     setState(() => _isCheckingArea = true);
     try {
-      final routeService = await RoutingBootstrap.routeService();
-      final isInArea = routeService.isInRoutingArea(selectedHome);
-      if (!mounted) return;
-
-      if (!isInArea) {
+      if (!HomeAreaService.isInTokyo23ApproxArea(selectedHome)) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('対応エリア外です')),
+          const SnackBar(content: Text('東京23区の対象外です')),
         );
         return;
+      }
+
+      final routeService = await RoutingBootstrap.routeService();
+      final isInRoutingArea = routeService.isInRoutingArea(selectedHome);
+      if (!mounted) return;
+      if (!isInRoutingArea) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('経路データ未整備エリアです')),
+        );
       }
 
       Navigator.of(context).pop(selectedHome);

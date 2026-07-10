@@ -53,7 +53,7 @@ double _pointNodeDistance2(Graph graph, List<double> point, int nodeIndex) {
 /// グラフ本体は起動時に全件読み込み、探索中はSQLiteを一切叩かない(§4.2)。
 class RoutingDatabase {
   static const String assetName = 'routing.db';
-  static const String _assetRevision = '20260710_gsi_edogawa_types_v2';
+  static const String _assetRevision = '20260710_tokyo23_routing_v2';
 
   final Database db;
   final Graph graph;

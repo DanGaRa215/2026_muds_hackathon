@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -16,6 +15,7 @@ import '../routing/models.dart';
 import '../routing/precompute_service.dart';
 import '../routing/route_service.dart';
 import '../routing_bootstrap.dart';
+import '../services/home_area_service.dart';
 import 'prepare_screen.dart';
 
 class NaviScreen extends StatefulWidget {
@@ -23,17 +23,20 @@ class NaviScreen extends StatefulWidget {
     super.key,
     required this.shelter,
     required this.mode,
+    this.initialRoute,
+    this.initialRouteSourceLabel = '候補選定時に計算',
   });
 
   final ShelterInfo shelter;
   final DisasterMode mode;
+  final RouteResult? initialRoute;
+  final String initialRouteSourceLabel;
 
   @override
   State<NaviScreen> createState() => _NaviScreenState();
 }
 
 class _NaviScreenState extends State<NaviScreen> {
-  static const _homeLocationSeparator = '||home=';
   static const _defaultCenter = LatLng(35.7068, 139.8683);
   static const _floodGuidance = '大規模水害時は、時間に余裕がある場合は浸水しない地域への広域避難、'
       '余裕がない場合は近くの建物の3階以上への避難(垂直避難)が基本です。'
@@ -73,13 +76,25 @@ class _NaviScreenState extends State<NaviScreen> {
 
       _RouteLoadResult? loadedRoute;
       if (homeLocation != null) {
-        loadedRoute = await _resolveRoute(
-          routeService: routeService,
-          precomputeService: precomputeService,
-          homeLocation: homeLocation,
-          currentPosition: currentPosition,
-          profile: _selectedProfile,
-        );
+        final initialRoute = widget.initialRoute;
+        final canUseInitialRoute = initialRoute != null &&
+            initialRoute.shelterId == widget.shelter.shelterId &&
+            initialRoute.mode == widget.mode &&
+            initialRoute.profile == _selectedProfile &&
+            (currentPosition == null ||
+                _distanceM(currentPosition, homeLocation) < 300);
+        loadedRoute = canUseInitialRoute
+            ? _RouteLoadResult(
+                route: initialRoute,
+                sourceLabel: widget.initialRouteSourceLabel,
+              )
+            : await _resolveRoute(
+                routeService: routeService,
+                precomputeService: precomputeService,
+                homeLocation: homeLocation,
+                currentPosition: currentPosition,
+                profile: _selectedProfile,
+              );
       }
 
       if (!mounted) return;
@@ -121,30 +136,12 @@ class _NaviScreenState extends State<NaviScreen> {
   }
 
   Future<LatLng?> _loadHomeLocation() async {
-    final info = await DatabaseHelper.instance.getHomeInfo();
-    final rawStructure = info?['structure'] as String?;
-    if (rawStructure == null) {
-      return null;
-    }
-
-    final separatorIndex = rawStructure.indexOf(_homeLocationSeparator);
-    if (separatorIndex < 0) {
-      return null;
-    }
-
-    final values =
-        rawStructure.substring(separatorIndex + _homeLocationSeparator.length);
-    final parts = values.split(',');
-    if (parts.length != 2) {
-      return null;
-    }
-
-    final lat = double.tryParse(parts[0]);
-    final lon = double.tryParse(parts[1]);
-    if (lat == null || lon == null) {
-      return null;
-    }
-    return LatLng(lat, lon);
+    final info = await DatabaseHelper.instance.getRegisteredHome();
+    if (info == null) return null;
+    return LatLng(
+      (info['lat'] as num).toDouble(),
+      (info['lon'] as num).toDouble(),
+    );
   }
 
   Future<RouteResult?> _loadPrecomputedRoute(
@@ -188,6 +185,18 @@ class _NaviScreenState extends State<NaviScreen> {
 
     route ??= await _loadPrecomputedRoute(precomputeService, profile);
     routeSourceLabel ??= route == null ? null : '自宅からの保存ルート';
+
+    if (route == null) {
+      route = await routeService.findRoute(
+        from: homeLocation,
+        shelterId: widget.shelter.shelterId,
+        mode: widget.mode,
+        profile: profile,
+      );
+      if (route != null) {
+        routeSourceLabel = '自宅から計算';
+      }
+    }
 
     return _RouteLoadResult(route: route, sourceLabel: routeSourceLabel);
   }
@@ -268,18 +277,7 @@ class _NaviScreenState extends State<NaviScreen> {
   }
 
   double _distanceM(LatLng a, LatLng b) {
-    const earthRadiusM = 6371000.0;
-    const degToRad = math.pi / 180;
-    final dLat = (b.latitude - a.latitude) * degToRad;
-    final dLon = (b.longitude - a.longitude) * degToRad;
-    final sinLat = math.sin(dLat / 2);
-    final sinLon = math.sin(dLon / 2);
-    final h = sinLat * sinLat +
-        math.cos(a.latitude * degToRad) *
-            math.cos(b.latitude * degToRad) *
-            sinLon *
-            sinLon;
-    return 2 * earthRadiusM * math.asin(math.min(1.0, math.sqrt(h)));
+    return HomeAreaService.distanceM(a, b);
   }
 
   vtr.Theme _buildRoadsTheme() {
@@ -369,7 +367,7 @@ class _NaviScreenState extends State<NaviScreen> {
           ),
         );
       }
-      return _buildMissingRoutePrompt();
+      return _buildFallbackNavigation();
     }
 
     return Column(
@@ -398,42 +396,6 @@ class _NaviScreenState extends State<NaviScreen> {
             const SizedBox(height: 8),
             const Text(
               'オフラインで使う避難ルートを表示するには、先に避難準備で自宅位置を登録してください。',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PrepareScreen()),
-                );
-              },
-              icon: const Icon(Icons.add_location_alt),
-              label: const Text('自宅登録へ'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMissingRoutePrompt() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Icon(Icons.route, size: 72, color: Colors.blueGrey),
-            const SizedBox(height: 16),
-            const Text(
-              '保存ルートが見つかりません',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '避難準備で自宅位置を登録し、避難ルートを保存してください。',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -652,6 +614,10 @@ class _NaviScreenState extends State<NaviScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            if (!shelterSupportsMode(widget.shelter, widget.mode)) ...[
+              _buildShelterModeNotice(),
+              const SizedBox(height: 12),
+            ],
             Text(
               '目的地: ${widget.shelter.name}',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -714,6 +680,230 @@ class _NaviScreenState extends State<NaviScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildShelterModeNotice() {
+    final text = widget.shelter.typeList.isEmpty
+        ? 'この避難所は災害種別の指定が未整備です'
+        : 'この避難所は現在の災害種別としては指定されていません';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          text,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackNavigation() {
+    final homeLocation = _homeLocation;
+    if (homeLocation == null) {
+      return _buildHomeRegistrationPrompt();
+    }
+
+    final distanceM = HomeAreaService.distanceM(
+      homeLocation,
+      widget.shelter.latLng,
+    );
+    final direction = HomeAreaService.direction8(
+      homeLocation,
+      widget.shelter.latLng,
+    );
+
+    return Column(
+      children: [
+        Expanded(child: _buildFallbackMap(homeLocation)),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF4E5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      '経路データ未整備エリアです。道路に沿った経路線は表示できません。',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (widget.mode == DisasterMode.flood) ...[
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF3FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        _floodGuidance,
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text(
+                  '目的地: ${widget.shelter.name}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricTile(
+                        label: '直線距離',
+                        value: HomeAreaService.distanceLabel(distanceM),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _MetricTile(
+                        label: '方位',
+                        value: direction,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildArrivalButton(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFallbackMap(LatLng homeLocation) {
+    final points = [homeLocation, widget.shelter.latLng];
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: homeLocation,
+        initialZoom: 14,
+        initialCameraFit: CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(points),
+          padding: const EdgeInsets.all(64),
+          maxZoom: 16,
+        ),
+        minZoom: 10,
+        maxZoom: 16,
+      ),
+      children: [
+        VectorTileLayer(
+          theme: _buildRoadsTheme(),
+          tileProviders: TileProviders({
+            'pmtiles': _tileProvider!,
+          }),
+        ),
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: homeLocation,
+              width: 44,
+              height: 44,
+              child: const Icon(
+                Icons.home,
+                color: Colors.blue,
+                size: 34,
+              ),
+            ),
+            Marker(
+              point: widget.shelter.latLng,
+              width: 180,
+              height: 64,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.location_on,
+                    color: Colors.red,
+                    size: 32,
+                  ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: const [
+                        BoxShadow(
+                          blurRadius: 8,
+                          color: Color(0x33000000),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        widget.shelter.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildArrivalButton() {
+    return FilledButton(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(56),
+      ),
+      onPressed: () async {
+        final navigator = Navigator.of(context);
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('到着を記録しました'),
+            content: const TextField(
+              decoration: InputDecoration(hintText: '安否メモ（任意・デモ）'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) {
+          navigator.popUntil((r) => r.isFirst);
+        }
+      },
+      child: const Text(
+        '到着した',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }
