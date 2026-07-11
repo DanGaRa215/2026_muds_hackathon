@@ -6,6 +6,8 @@ import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import '../db/database_helper.dart';
 import '../map/offline_map_tiles.dart';
 import '../map/offline_map_visuals.dart';
+import '../map/shelter_overlay_layers.dart';
+import '../services/shelter_candidate_service.dart';
 
 class DemoMapScreen extends StatefulWidget {
   const DemoMapScreen({super.key});
@@ -23,6 +25,8 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
   String? _errorMessage;
   String _currentAddress = "未登録";
   bool _hasHomeInfo = false;
+  ShelterCandidates? _candidates;
+  int _selectedShelterIndex = 0;
 
   @override
   void initState() {
@@ -34,7 +38,10 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
     try {
       final homeData = await DatabaseHelper.instance.getRegisteredHome();
       String? pmtilesPath;
+      _candidates = null;
+      _selectedShelterIndex = 0;
 
+      Future<ShelterCandidates?>? candidatesFuture;
       if (homeData != null) {
         final lat = (homeData['lat'] as num).toDouble();
         final lon = (homeData['lon'] as num).toDouble();
@@ -45,11 +52,17 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
           _currentAddress = homeData['address'] ?? "住所不明";
           _hasHomeInfo = true;
         });
+
+        // 避難所候補取得はタイル読込と並列実行（失敗時は tryLoad が null を返し
+        // 地図表示は継続する）
+        candidatesFuture =
+            ShelterCandidateService.tryLoad(origin: LatLng(lat, lon));
       }
 
       final provider = await loadOfflineMapTileProvider(
         preferredPath: pmtilesPath,
       );
+      _candidates = await candidatesFuture;
 
       if (mounted) {
         setState(() {
@@ -121,12 +134,28 @@ class _DemoMapScreenState extends State<DemoMapScreen> {
                               width: 45,
                               height: 45,
                               child: const Icon(Icons.location_on,
-                                  color: Colors.red, size: 45),
+                                  color: Color(0xFF1976D2), size: 45),
                             ),
                           ],
                         ),
+                        if (_hasHomeInfo &&
+                            _candidates != null &&
+                            _candidates!.shelters.isNotEmpty)
+                          ...buildShelterOverlayLayers(
+                            candidates: _candidates!,
+                            selectedIndex: _selectedShelterIndex,
+                            onSelect: (i) =>
+                                setState(() => _selectedShelterIndex = i),
+                          ),
                       ],
                     ),
+                    if (_hasHomeInfo &&
+                        _candidates != null &&
+                        _candidates!.shelters.isNotEmpty)
+                      buildShelterOverlayChip(
+                        candidates: _candidates!,
+                        selectedIndex: _selectedShelterIndex,
+                      ),
                     Positioned(
                       top: 16,
                       left: 16,

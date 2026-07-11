@@ -7,6 +7,8 @@ import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import '../db/database_helper.dart';
 import '../map/offline_map_tiles.dart';
 import '../map/offline_map_visuals.dart';
+import '../map/shelter_overlay_layers.dart';
+import '../services/shelter_candidate_service.dart';
 
 class MapSpikeScreen extends StatefulWidget {
   const MapSpikeScreen({super.key});
@@ -23,6 +25,8 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
   LatLng _mapCenter = _defaultCenter; // 🎯 マップの中心位置（DBから取得する自宅の座標）
   String? _errorMessage;
   bool _isLoading = true;
+  ShelterCandidates? _candidates;
+  int _selectedShelterIndex = 0;
 
   @override
   void initState() {
@@ -46,15 +50,22 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
           (homeInfo['lon'] as num).toDouble(),
         );
 
-        // タイルプロバイダを作成
-        final provider = await loadOfflineMapTileProvider(
+        // タイルプロバイダ作成と避難所候補取得は独立なので並列実行する
+        // （候補側は tryLoad が例外を握るため、失敗しても地図表示は継続）
+        final providerFuture = loadOfflineMapTileProvider(
           preferredPath: targetPath,
         );
+        final candidatesFuture =
+            ShelterCandidateService.tryLoad(origin: targetLatLng);
+        final provider = await providerFuture;
+        final candidates = await candidatesFuture;
 
         if (mounted) {
           setState(() {
             _tileProvider = provider;
             _mapCenter = targetLatLng; // 🎯 カメラ初期位置をDBに保存した自宅の場所にセット！
+            _candidates = candidates;
+            _selectedShelterIndex = 0;
             _isLoading = false;
           });
         }
@@ -113,35 +124,53 @@ class _MapSpikeScreenState extends State<MapSpikeScreen> {
       );
     }
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: _mapCenter, // 🎯 DBから取得した自宅位置が中心になります
-        initialZoom: offlineMapInitialZoom, // 自宅周辺がハッキリ見えるように少しズームアップ
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: boundsForHomeRadius(_mapCenter),
-        ),
-        minZoom: 10,
-        maxZoom: 16,
-      ),
-      children: [
-        buildOfflineBaseMapLayer(_tileProvider!),
-        buildHomeRadiusLayer(_mapCenter),
+    final candidates = _candidates;
+    final hasShelters = candidates != null && candidates.shelters.isNotEmpty;
 
-        // 🎯 核心修正③：DBから読み込んだ「自宅の場所（_mapCenter）」に赤い大きなピンを刺す
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: _mapCenter,
-              width: 40,
-              height: 40,
-              child: const Icon(
-                Icons.location_on, // 災害時に目立つ赤いピンマーク
-                color: Colors.red,
-                size: 45,
-              ),
+    return Stack(
+      children: [
+        FlutterMap(
+          options: MapOptions(
+            initialCenter: _mapCenter, // 🎯 DBから取得した自宅位置が中心になります
+            initialZoom: offlineMapInitialZoom, // 自宅周辺がハッキリ見えるように少しズームアップ
+            cameraConstraint: CameraConstraint.containCenter(
+              bounds: boundsForHomeRadius(_mapCenter),
             ),
+            minZoom: 10,
+            maxZoom: 16,
+          ),
+          children: [
+            buildOfflineBaseMapLayer(_tileProvider!),
+            buildHomeRadiusLayer(_mapCenter),
+
+            // 🎯 核心修正③：DBから読み込んだ「自宅の場所（_mapCenter）」に青い大きなピンを刺す
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: _mapCenter,
+                  width: 40,
+                  height: 40,
+                  child: const Icon(
+                    Icons.location_on, // 自宅を示す青いピンマーク（EEW画面の自宅色と統一）
+                    color: Color(0xFF1976D2),
+                    size: 45,
+                  ),
+                ),
+              ],
+            ),
+            if (hasShelters)
+              ...buildShelterOverlayLayers(
+                candidates: candidates,
+                selectedIndex: _selectedShelterIndex,
+                onSelect: (i) => setState(() => _selectedShelterIndex = i),
+              ),
           ],
         ),
+        if (hasShelters)
+          buildShelterOverlayChip(
+            candidates: candidates,
+            selectedIndex: _selectedShelterIndex,
+          ),
       ],
     );
   }
