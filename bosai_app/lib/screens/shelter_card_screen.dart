@@ -3,16 +3,19 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 
-import '../db/database_helper.dart';
-import '../db/shelter_database.dart';
-import '../logic/coastal_logic.dart';
 import '../map/offline_map_tiles.dart';
 import '../map/offline_map_visuals.dart';
+import '../map/shelter_overlay_layers.dart';
 import '../routing/models.dart';
 import '../routing/route_service.dart';
-import '../routing_bootstrap.dart';
 import '../services/home_area_service.dart';
+import '../services/shelter_candidate_service.dart';
 import 'navi_screen.dart';
+
+typedef _ProposalData = ({
+  ShelterCandidates candidates,
+  PmTilesVectorTileProvider? tileProvider,
+});
 
 class ShelterProposalPage extends StatefulWidget {
   const ShelterProposalPage({
@@ -44,119 +47,31 @@ class ShelterCardScreen extends ShelterProposalPage {
 class _ShelterProposalPageState extends State<ShelterProposalPage> {
   static const Color _backgroundColor = Color(0xFFE7FBF0);
   static const Color _textColor = Color(0xFF300808);
-  static const _displayCandidateLimit = 5;
-  static const _routeSortCandidateLimit = 20;
   static const _floodGuidance = '大規模水害時は、時間に余裕がある場合は浸水しない地域への広域避難、'
       '余裕がない場合は近くの建物の3階以上への避難(垂直避難)が基本です。'
       'この経路は参考情報です';
-  late final Future<_ShelterCandidates> _sheltersFuture;
+  late final Future<_ProposalData> _sheltersFuture;
   var _candidateIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _sheltersFuture = _loadShelterCandidates();
+    _sheltersFuture = _loadProposalData();
   }
 
-  Future<_ShelterCandidates> _loadShelterCandidates() async {
-    final routeService = await RoutingBootstrap.routeService();
-
-    final LatLng homeLocation;
-    final PmTilesVectorTileProvider? tileProvider;
-    final override = widget.originOverride;
-    if (override != null) {
-      homeLocation = override;
-      // 同梱PMTilesへのフォールバック解決（現在地デモが事前コピー済み）
-      tileProvider = await _loadTileProvider(null);
-    } else {
-      final registeredHome = await DatabaseHelper.instance.getRegisteredHome();
-      if (registeredHome == null) {
-        return const _ShelterCandidates(needsHomeRegistration: true);
-      }
-      homeLocation = LatLng(
-        (registeredHome['lat'] as num).toDouble(),
-        (registeredHome['lon'] as num).toDouble(),
-      );
-      tileProvider = await _loadTileProvider(
-        registeredHome['pmtiles_path']?.toString(),
-      );
-    }
-    if (routeService.isInRoutingArea(homeLocation)) {
-      final straightCandidates = HomeAreaService.nearestSheltersByStraightLine(
-        home: homeLocation,
-        shelters: routeService.allShelters,
-        limit: _routeSortCandidateLimit,
-      );
-      final routes = await routeService.findRoutesToShelters(
-        from: homeLocation,
-        shelters: straightCandidates,
-        mode: widget.disasterMode,
-        profile: WeightProfile.safest,
-      );
-      final routesByShelterId = {
-        for (final route in routes) route.shelterId: route,
-      };
-      final routeRanked = [
-        for (final shelter in straightCandidates)
-          if (routesByShelterId.containsKey(shelter.shelterId)) shelter,
-      ]..sort(
-          (a, b) {
-            final aRoute = routesByShelterId[a.shelterId]!;
-            final bRoute = routesByShelterId[b.shelterId]!;
-            final fallbackOrder = (aRoute.usedFallback ? 1 : 0)
-                .compareTo(bRoute.usedFallback ? 1 : 0);
-            if (fallbackOrder != 0) return fallbackOrder;
-            final penaltyOrder = aRoute.penaltyM.compareTo(bRoute.penaltyM);
-            if (penaltyOrder != 0) return penaltyOrder;
-            return aRoute.distanceM.compareTo(bRoute.distanceM);
-          },
-        );
-      var shelters = routeRanked.isEmpty ? straightCandidates : routeRanked;
-      if (_needsSurgeRanking) {
-        shelters = rankSheltersForSurge(
-          shelters: shelters,
-          origin: homeLocation,
-          routesByShelterId: routesByShelterId,
-        );
-      }
-      return _ShelterCandidates(
-        shelters: shelters.take(_displayCandidateLimit).toList(),
-        homeLocation: homeLocation,
-        routesByShelterId: routesByShelterId,
-        tileProvider: tileProvider,
-      );
-    }
-
-    final shelterDb = await ShelterDatabase.instance;
-    final fallbackQueryLimit =
-        _needsSurgeRanking ? _routeSortCandidateLimit : _displayCandidateLimit;
-    final nearest = await shelterDb.queryNearest(
-      lat: homeLocation.latitude,
-      lon: homeLocation.longitude,
+  Future<_ProposalData> _loadProposalData() async {
+    final candidates = await ShelterCandidateService.load(
+      origin: widget.originOverride,
       mode: widget.disasterMode,
-      limit: fallbackQueryLimit,
-      preferDisasterType: false,
+      situation: widget.situation,
     );
-    var fallbackShelters =
-        nearest.shelters.map(HomeAreaService.toShelterInfo).toList();
-    if (_needsSurgeRanking) {
-      fallbackShelters = rankSheltersForSurge(
-        shelters: fallbackShelters,
-        origin: homeLocation,
-      );
+    if (candidates.needsHomeRegistration) {
+      return (candidates: candidates, tileProvider: null);
     }
-    return _ShelterCandidates(
-      shelters: fallbackShelters.take(_displayCandidateLimit).toList(),
-      homeLocation: homeLocation,
-      tileProvider: tileProvider,
-    );
+    // originOverride 時は pmtilesPath が null → 同梱PMTilesへフォールバック解決
+    final tileProvider = await _loadTileProvider(candidates.pmtilesPath);
+    return (candidates: candidates, tileProvider: tileProvider);
   }
-
-  /// 高潮/津波の状況タグがある時のみリランクを適用する
-  /// （既存デモは situation が空なので挙動不変）。
-  bool get _needsSurgeRanking =>
-      widget.situation.contains('surge') ||
-      widget.situation.contains('tsunami');
 
   Future<PmTilesVectorTileProvider?> _loadTileProvider(
       String? pmtilesPath) async {
@@ -190,7 +105,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         ],
       ),
       body: SafeArea(
-        child: FutureBuilder<_ShelterCandidates>(
+        child: FutureBuilder<_ProposalData>(
           future: _sheltersFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
@@ -209,7 +124,9 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
               );
             }
 
-            final candidates = snapshot.data ?? const _ShelterCandidates();
+            final data = snapshot.data ??
+                (candidates: const ShelterCandidates(), tileProvider: null);
+            final candidates = data.candidates;
             if (candidates.needsHomeRegistration) {
               return _buildNeedsHomeRegistrationState();
             }
@@ -219,7 +136,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
 
             final shelters = candidates.shelters;
             final shelter = shelters[_candidateIndex % shelters.length];
-            return _buildShelterCandidate(context, shelter, candidates);
+            return _buildShelterCandidate(context, shelter, data);
           },
         ),
       ),
@@ -229,8 +146,9 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
   Widget _buildShelterCandidate(
     BuildContext context,
     ShelterInfo shelter,
-    _ShelterCandidates candidates,
+    _ProposalData data,
   ) {
+    final candidates = data.candidates;
     final shelterCount = candidates.shelters.length;
     final homeLocation = candidates.homeLocation;
     final route = candidates.routeFor(shelter);
@@ -251,7 +169,7 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: SizedBox(
                 height: mapHeight,
-                child: _buildCandidateMap(candidates, shelter),
+                child: _buildCandidateMap(data, shelter),
               ),
             ),
             Expanded(
@@ -415,11 +333,12 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
   }
 
   Widget _buildCandidateMap(
-    _ShelterCandidates candidates,
+    _ProposalData data,
     ShelterInfo selectedShelter,
   ) {
+    final candidates = data.candidates;
     final homeLocation = candidates.homeLocation;
-    final tileProvider = candidates.tileProvider;
+    final tileProvider = data.tileProvider;
     if (homeLocation == null) {
       return const SizedBox.shrink();
     }
@@ -461,31 +380,17 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
         children: [
           buildOfflineBaseMapLayer(tileProvider),
           buildHomeRadiusLayer(homeLocation),
-          if (route != null && route.geometry.length >= 2)
-            PolylineLayer(
-              polylines: [
-                Polyline(
-                  points: route.geometry,
-                  color: Colors.white,
-                  strokeWidth: 9,
-                ),
-                Polyline(
-                  points: route.geometry,
-                  color: const Color(0xFFFF6D00),
-                  strokeWidth: 7,
-                ),
-              ],
-            ),
+          ...buildShelterOverlayLayers(
+            candidates: candidates,
+            selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+            onSelect: (index) {
+              if (_candidateIndex != index) {
+                setState(() => _candidateIndex = index);
+              }
+            },
+          ),
           MarkerLayer(
-            markers: [
-              _buildHomeMarker(homeLocation),
-              for (var i = 0; i < candidates.shelters.length; i++)
-                _buildShelterMarker(
-                  candidates.shelters[i],
-                  i,
-                  i == selectedIndex,
-                ),
-            ],
+            markers: [_buildHomeMarker(homeLocation)],
           ),
           if (selectedIndex >= 0)
             Positioned(
@@ -494,9 +399,9 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
               right: 8,
               child: Align(
                 alignment: Alignment.topLeft,
-                child: _buildSelectedShelterMapLabel(
-                  selectedIndex,
-                  selectedShelter,
+                child: buildSelectedShelterLabel(
+                  index: selectedIndex,
+                  shelter: selectedShelter,
                 ),
               ),
             ),
@@ -549,77 +454,6 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
           Icons.my_location,
           color: Color(0xFF1976D2),
           size: 20,
-        ),
-      ),
-    );
-  }
-
-  Marker _buildShelterMarker(
-    ShelterInfo shelter,
-    int index,
-    bool isSelected,
-  ) {
-    return Marker(
-      point: shelter.latLng,
-      width: 46,
-      height: 46,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (_candidateIndex != index) {
-            setState(() => _candidateIndex = index);
-          }
-        },
-        child: Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            Icon(
-              Icons.location_on,
-              color: isSelected
-                  ? const Color(0xFFE53935)
-                  : const Color(0xFF6D3D3D),
-              size: isSelected ? 40 : 36,
-            ),
-            Positioned(
-              top: isSelected ? 8 : 7,
-              child: Text(
-                '${index + 1}',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isSelected ? 12 : 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedShelterMapLabel(
-    int selectedIndex,
-    ShelterInfo shelter,
-  ) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: const [
-          BoxShadow(blurRadius: 8, color: Color(0x33000000)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Text(
-          '第${selectedIndex + 1}候補 ${shelter.name}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _textColor,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
         ),
       ),
     );
@@ -780,25 +614,6 @@ class _ShelterProposalPageState extends State<ShelterProposalPage> {
       for (final type in shelter.typeList) labels[type] ?? type,
     ];
   }
-}
-
-class _ShelterCandidates {
-  const _ShelterCandidates({
-    this.shelters = const <ShelterInfo>[],
-    this.homeLocation,
-    this.routesByShelterId = const <String, RouteResult>{},
-    this.tileProvider,
-    this.needsHomeRegistration = false,
-  });
-
-  final List<ShelterInfo> shelters;
-  final LatLng? homeLocation;
-  final Map<String, RouteResult> routesByShelterId;
-  final PmTilesVectorTileProvider? tileProvider;
-  final bool needsHomeRegistration;
-
-  RouteResult? routeFor(ShelterInfo shelter) =>
-      routesByShelterId[shelter.shelterId];
 }
 
 /// 全候補NO時の最終指示（設計書のエッジケース）
